@@ -1,1 +1,0 @@
-<script src="{{ url_for('static',filename='js/jquery-3.3.1.min.js') }}"></script>

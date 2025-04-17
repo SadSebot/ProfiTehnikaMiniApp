@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Обработка заявок</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div class="main-container">
+        <div class="hero">
+            <div class="hero-content">
+                <h1>Обработка заявок</h1>
+                
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="new-request">Новая заявка</button>
+                    <button class="tab-btn" data-tab="requests-list">Список заявок</button>
+                </div>
+                
+                <div class="tab-content active" id="new-request-tab">
+                    <form id="request-form">
+                        <input type="text" id="name" placeholder="Имя" required>
+                        <input type="tel" id="phone" placeholder="Телефон" required>
+                        <textarea id="message" placeholder="Сообщение" required></textarea>
+                        <button type="submit">Отправить заявку</button>
+                    </form>
+                </div>
+                
+                <div class="tab-content" id="requests-list-tab">
+                    <div class="filter-controls">
+                        <select id="status-filter">
+                            <option value="all">Все</option>
+                            <option value="new">Новые</option>
+                            <option value="in_progress">В работе</option>
+                            <option value="completed">Завершённые</option>
+                        </select>
+                    </div>
+                    <div id="requests-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>
