@@ -67,7 +67,7 @@ function setupRequestForm() {
 async function loadRequests() {
     try {
         const statusFilter = document.getElementById('status-filter').value;
-        let url = '/api/requests';
+        let url = '/api/zayavkif';
         if (statusFilter !== 'all') {
             url += `?status=${statusFilter}`;
         }
@@ -118,7 +118,7 @@ async function loadRequests() {
                 const newStatus = e.target.value;
                 
                 try {
-                    const response = await fetch(`/api/requests/${requestId}`, {
+                    const response = await fetch(`/api/zayavki/${Id}`, {
                         method: 'PUT',
                         headers: {
                             'Content-Type': 'application/json',

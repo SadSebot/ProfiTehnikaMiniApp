@@ -2,13 +2,11 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import pyodbc
 from datetime import datetime
-import os
 from config import DB_CONFIG
 
 app = Flask(__name__)
 CORS(app)
 
-# Подключение к MS SQL Server
 def get_db_connection():
     conn = pyodbc.connect(
         f"DRIVER={{ODBC Driver 17 for SQL Server}};"
@@ -19,76 +17,86 @@ def get_db_connection():
     )
     return conn
 
-# Создание таблицы, если её нет
+# Проверка и создание таблицы (если нужно)
 def init_db():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-    IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='requests' AND xtype='U')
-    CREATE TABLE requests (
-        id INT IDENTITY(1,1) PRIMARY KEY,
-        name NVARCHAR(100) NOT NULL,
-        phone NVARCHAR(20) NOT NULL,
-        message NVARCHAR(500) NOT NULL,
-        request_date DATETIME NOT NULL,
-        status NVARCHAR(20) DEFAULT 'new'
-    )
-    """)
-    conn.commit()
-    conn.close()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'zayavki')
+        CREATE TABLE dbo.zayavki (
+            id INT IDENTITY(1,1) PRIMARY KEY,
+            name NVARCHAR(100) NOT NULL,
+            phone NVARCHAR(20) NOT NULL,
+            message NVARCHAR(500) NOT NULL,
+            request_date DATETIME NOT NULL DEFAULT GETDATE(),
+            status NVARCHAR(20) DEFAULT 'new'
+        )
+        """)
+        conn.commit()
+        print("Таблица проверена/создана")
+    except Exception as e:
+        print(f"Ошибка при инициализации БД: {str(e)}")
+    finally:
+        conn.close()
 
-# API для работы с заявками
-@app.route('/api/requests', methods=['POST'])
-def create_request():
+@app.route('/api/zayavki', methods=['POST'])
+def create_zayavka():
     data = request.json
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-        INSERT INTO requests (name, phone, message, request_date)
-        VALUES (?, ?, ?, ?)
-        """, data['name'], data['phone'], data['message'], datetime.now())
+        INSERT INTO dbo.zayavki (name, phone, message)
+        VALUES (?, ?, ?)
+        """, data['name'], data['phone'], data['message'])
         conn.commit()
-        conn.close()
         return jsonify({"success": True, "message": "Заявка создана"}), 201
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        conn.close()
 
-@app.route('/api/requests', methods=['GET'])
-def get_requests():
+@app.route('/api/zayavki', methods=['GET'])
+def get_zayavki():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM requests ORDER BY request_date DESC")
+        cursor.execute("SELECT * FROM dbo.zayavki ORDER BY request_date DESC")
+        
         columns = [column[0] for column in cursor.description]
-        requests = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        conn.close()
+        zayavki = []
         
-        # Конвертация datetime в строку
-        for req in requests:
-            if 'request_date' in req:
-                req['request_date'] = req['request_date'].isoformat()
-        
-        return jsonify(requests)
+        for row in cursor.fetchall():
+            zayavka = dict(zip(columns, row))
+            # Конвертация datetime в строку
+            if 'request_date' in zayavka:
+                zayavka['request_date'] = zayavka['request_date'].isoformat()
+            zayavki.append(zayavka)
+            
+        return jsonify(zayavki)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
 
-@app.route('/api/requests/<int:request_id>', methods=['PUT'])
-def update_request(request_id):
+@app.route('/api/zayavki/<int:zayavka_id>', methods=['PUT'])
+def update_zayavka(zayavka_id):
     data = request.json
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-        UPDATE requests 
+        UPDATE dbo.zayavki 
         SET status = ?
         WHERE id = ?
-        """, data['status'], request_id)
+        """, data['status'], zayavka_id)
         conn.commit()
-        conn.close()
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
 
 if __name__ == '__main__':
     init_db()
