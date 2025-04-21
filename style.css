@@ -27,7 +27,7 @@
     background: var(--light-bg);
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: center;
     padding: 20px;
 }
@@ -48,79 +48,49 @@
     color: var(--accent-color);
 }
 
-.tabs {
+.controls {
     display: flex;
-    margin-bottom: 30px;
-    border-bottom: 1px solid #ddd;
-}
-
-.tab-btn {
-    padding: 10px 20px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 16px;
-    border-bottom: 3px solid transparent;
-    transition: all 0.3s;
-}
-
-.tab-btn.active {
-    border-bottom: 3px solid var(--accent-color);
-    color: var(--accent-color);
-    font-weight: bold;
-}
-
-.tab-content {
-    display: none;
-}
-
-.tab-content.active {
-    display: block;
-}
-
-form {
-    display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
     gap: 15px;
+    margin-bottom: 20px;
 }
 
-input, textarea, select {
-    padding: 12px 15px;
+.filter-controls, .search-controls {
+    display: flex;
+    gap: 10px;
+    flex-grow: 1;
+}
+
+input, select {
+    padding: 10px 15px;
     border: 1px solid #ddd;
     border-radius: 8px;
     font-size: 16px;
-    width: 100%;
-}
-
-textarea {
-    min-height: 120px;
-    resize: vertical;
+    flex-grow: 1;
 }
 
 button {
     background-color: var(--accent-color);
     color: white;
     border: none;
-    padding: 12px 20px;
+    padding: 10px 20px;
     border-radius: 8px;
     cursor: pointer;
     font-size: 16px;
     font-weight: bold;
     transition: background-color 0.3s;
+    white-space: nowrap;
 }
 
 button:hover {
     background-color: #e05a00;
 }
 
-.filter-controls {
-    margin-bottom: 20px;
-}
-
 #requests-container {
     display: flex;
     flex-direction: column;
     gap: 15px;
+    margin-bottom: 30px;
 }
 
 .request-card {
@@ -186,4 +156,36 @@ button:hover {
     padding: 5px;
     border-radius: 5px;
     border: 1px solid #ddd;
+    width: 100%;
+}
+
+.loading {
+    text-align: center;
+    padding: 20px;
+    color: #777;
+}
+
+.stats {
+    display: flex;
+    justify-content: space-around;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #eee;
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: var(--accent-color);
+}
+
+.stat-label {
+    font-size: 14px;
+    color: #777;
 }

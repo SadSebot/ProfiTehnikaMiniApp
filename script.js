@@ -2,72 +2,31 @@ const tg = window.Telegram.WebApp;
 tg.expand();
 tg.MainButton.hide();
 
-let currentUser = null;
-
 document.addEventListener('DOMContentLoaded', () => {
-    // Инициализация UI
-    setupTabs();
-    setupRequestForm();
+    loadRequests();
+    updateStats();
     
-    // Загрузка данных пользователя Telegram
-    if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
-        currentUser = tg.initDataUnsafe.user;
-    }
+    // Обработчики событий
+    document.getElementById('refresh-btn').addEventListener('click', loadRequests);
+    document.getElementById('search-btn').addEventListener('click', searchRequests);
+    document.getElementById('status-filter').addEventListener('change', loadRequests);
     
-    // Загрузка заявок при открытии вкладки
-    document.querySelector('[data-tab="requests-list"]').addEventListener('click', loadRequests);
-});
-
-function setupTabs() {
-    const tabs = document.querySelectorAll('.tab-btn');
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            
-            tab.classList.add('active');
-            const tabId = tab.getAttribute('data-tab');
-            document.getElementById(`${tabId}-tab`).classList.add('active');
-        });
-    });
-}
-
-function setupRequestForm() {
-    const form = document.getElementById('request-form');
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        const name = document.getElementById('name').value;
-        const phone = document.getElementById('phone').value;
-        const message = document.getElementById('message').value;
-        
-        try {
-            const response = await fetch('/api/requests', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ name, phone, message })
-            });
-            
-            if (response.ok) {
-                tg.showAlert('Заявка успешно отправлена!');
-                form.reset();
-            } else {
-                const error = await response.json();
-                tg.showAlert(error.error || 'Ошибка при отправке заявки');
-            }
-        } catch (error) {
-            tg.showAlert('Ошибка соединения');
-            console.error(error);
+    // Поиск при нажатии Enter
+    document.getElementById('search-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            searchRequests();
         }
     });
-}
+});
 
 async function loadRequests() {
+    const container = document.getElementById('requests-container');
+    container.innerHTML = '<div class="loading">Загрузка данных...</div>';
+    
+    const statusFilter = document.getElementById('status-filter').value;
+    
     try {
-        const statusFilter = document.getElementById('status-filter').value;
-        let url = '/api/zayavkif';
+        let url = '/api/zayavki';
         if (statusFilter !== 'all') {
             url += `?status=${statusFilter}`;
         }
@@ -75,71 +34,111 @@ async function loadRequests() {
         const response = await fetch(url);
         const requests = await response.json();
         
-        const container = document.getElementById('requests-container');
-        container.innerHTML = '';
-        
-        if (requests.length === 0) {
-            container.innerHTML = '<p>Нет заявок</p>';
-            return;
-        }
-        
-        requests.forEach(request => {
-            const card = document.createElement('div');
-            card.className = 'request-card';
-            
-            const statusClass = `status-${request.status || 'new'}`;
-            const statusText = getStatusText(request.status);
-            
-            card.innerHTML = `
-                <div class="request-header">
-                    <span class="request-name">${request.name}</span>
-                    <span class="request-status ${statusClass}">${statusText}</span>
-                </div>
-                <a href="tel:${request.phone}" class="request-phone">${request.phone}</a>
-                <div class="request-date">${new Date(request.request_date).toLocaleString()}</div>
-                <div class="request-message">${request.message}</div>
-                
-                ${currentUser ? `
-                <select class="status-select" data-request-id="${request.id}">
-                    <option value="new" ${request.status === 'new' ? 'selected' : ''}>Новая</option>
-                    <option value="in_progress" ${request.status === 'in_progress' ? 'selected' : ''}>В работе</option>
-                    <option value="completed" ${request.status === 'completed' ? 'selected' : ''}>Завершена</option>
-                </select>
-                ` : ''}
-            `;
-            
-            container.appendChild(card);
-        });
-        
-        // Добавляем обработчики для изменения статуса
-        document.querySelectorAll('.status-select').forEach(select => {
-            select.addEventListener('change', async (e) => {
-                const requestId = e.target.getAttribute('data-request-id');
-                const newStatus = e.target.value;
-                
-                try {
-                    const response = await fetch(`/api/zayavki/${Id}`, {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ status: newStatus })
-                    });
-                    
-                    if (!response.ok) {
-                        const error = await response.json();
-                        tg.showAlert(error.error || 'Ошибка обновления статуса');
-                    }
-                } catch (error) {
-                    tg.showAlert('Ошибка соединения');
-                    console.error(error);
-                }
-            });
-        });
-        
+        renderRequests(requests);
+        updateStats(requests);
     } catch (error) {
-        tg.showAlert('Ошибка загрузки заявок');
+        container.innerHTML = '<div class="loading">Ошибка загрузки данных</div>';
         console.error(error);
+        tg.showAlert('Ошибка загрузки заявок');
+    }
+}
+
+async function searchRequests() {
+    const searchQuery = document.getElementById('search-input').value.trim();
+    if (!searchQuery) return loadRequests();
+    
+    const container = document.getElementById('requests-container');
+    container.innerHTML = '<div class="loading">Поиск...</div>';
+    
+    try {
+        const response = await fetch(`/api/zayavki/search?query=${encodeURIComponent(searchQuery)}`);
+        const requests = await response.json();
+        renderRequests(requests);
+    } catch (error) {
+        container.innerHTML = '<div class="loading">Ошибка поиска</div>';
+        console.error(error);
+        tg.showAlert('Ошибка поиска');
+    }
+}
+
+function renderRequests(requests) {
+    const container = document.getElementById('requests-container');
+    
+    if (requests.length === 0) {
+        container.innerHTML = '<div class="loading">Нет заявок</div>';
+        return;
+    }
+    
+    container.innerHTML = '';
+    
+    requests.forEach(request => {
+        const card = document.createElement('div');
+        card.className = 'request-card';
+        
+        const statusClass = `status-${request.status || 'new'}`;
+        const statusText = getStatusText(request.status);
+        
+        card.innerHTML = `
+            <div class="request-header">
+                <span class="request-name">${request.name}</span>
+                <span class="request-status ${statusClass}">${statusText}</span>
+            </div>
+            <a href="tel:${request.phone}" class="request-phone">${request.phone}</a>
+            <div class="request-date">${new Date(request.request_date).toLocaleString()}</div>
+            <div class="request-message">${request.message}</div>
+            
+            <select class="status-select" data-request-id="${request.id}">
+                <option value="new" ${request.status === 'new' ? 'selected' : ''}>Новая</option>
+                <option value="in_progress" ${request.status === 'in_progress' ? 'selected' : ''}>В работе</option>
+                <option value="completed" ${request.status === 'completed' ? 'selected' : ''}>Завершена</option>
+            </select>
+        `;
+        
+        // Обработчик изменения статуса
+        card.querySelector('.status-select').addEventListener('change', async (e) => {
+            const requestId = e.target.getAttribute('data-request-id');
+            const newStatus = e.target.value;
+            
+            try {
+                const response = await fetch(`/api/zayavki/${requestId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ status: newStatus })
+                });
+                
+                if (response.ok) {
+                    loadRequests(); // Обновляем список
+                } else {
+                    const error = await response.json();
+                    tg.showAlert(error.error || 'Ошибка обновления статуса');
+                }
+            } catch (error) {
+                tg.showAlert('Ошибка соединения');
+                console.error(error);
+            }
+        });
+        
+        container.appendChild(card);
+    });
+}
+
+function updateStats(requests) {
+    // В реальном приложении нужно делать отдельный запрос для статистики
+    // или анализировать полученные requests
+    document.getElementById('new-count').textContent = '0';
+    document.getElementById('progress-count').textContent = '0';
+    document.getElementById('completed-count').textContent = '0';
+    
+    if (requests) {
+        const newCount = requests.filter(r => r.status === 'new').length;
+        const progressCount = requests.filter(r => r.status === 'in_progress').length;
+        const completedCount = requests.filter(r => r.status === 'completed').length;
+        
+        document.getElementById('new-count').textContent = newCount;
+        document.getElementById('progress-count').textContent = progressCount;
+        document.getElementById('completed-count').textContent = completedCount;
     }
 }
 
@@ -151,6 +150,3 @@ function getStatusText(status) {
     };
     return statusMap[status] || 'Новая';
 }
-
-// Обновляем список при изменении фильтра
-document.getElementById('status-filter').addEventListener('change', loadRequests);
