@@ -4,7 +4,6 @@ import mysql.connector
 from mysql.connector import Error
 from datetime import datetime
 import logging
-from config import DB_CONFIG  # Измените конфиг для MySQL
 
 app = Flask(__name__)
 CORS(app)
@@ -26,7 +25,26 @@ def get_db_connection():
     except Error as e:
         logger.error(f"Ошибка подключения к MySQL: {str(e)}")
         raise
-
+@app.route('/api/requests', methods=['POST'])
+def create_zayavka():
+    data = request.json
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+        INSERT INTO zayavki (name, phone, message)
+        VALUES (%s, %s, %s)
+        """, (data['name'], data['phone'], data['message']))
+        
+        conn.commit()
+        return jsonify({"success": True, "message": "Заявка создана"})
+    except Error as e:
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if 'conn' in locals():
+            conn.close()
 @app.route('/api/test_db')
 def test_db():
     try:
@@ -42,7 +60,7 @@ def test_db():
             conn.close()
 
 @app.route('/api/requests', methods=['GET'])
-def get_zayavki():
+def get_requests():
     logger.debug("Получение заявок из MySQL")
     try:
         conn = get_db_connection()
@@ -68,7 +86,7 @@ def get_zayavki():
         # Конвертируем datetime в строку
         for request in requests:
             if 'created_at' in request and isinstance(request['created_at'], datetime):
-                request['request_date'] = request['created_at'].isoformat()
+                request['created_at'] = request['created_at'].isoformat()
         
         logger.debug(f"Найдено {len(requests)} заявок")
         return jsonify(requests)
