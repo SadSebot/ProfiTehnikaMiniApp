@@ -26,7 +26,7 @@ async function loadRequests() {
     const statusFilter = document.getElementById('status-filter').value;
     
     try {
-        let url = '/api/zayavki';
+        let url = '/api/requests';
         if (statusFilter !== 'all') {
             url += `?status=${statusFilter}`;
         }
@@ -51,7 +51,7 @@ async function searchRequests() {
     container.innerHTML = '<div class="loading">Поиск...</div>';
     
     try {
-        const response = await fetch(`/api/zayavki/search?query=${encodeURIComponent(searchQuery)}`);
+        const response = await fetch(`/api/requests/search?query=${encodeURIComponent(searchQuery)}`);
         const requests = await response.json();
         renderRequests(requests);
     } catch (error) {

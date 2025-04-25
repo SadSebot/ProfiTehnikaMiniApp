@@ -1,6 +1,6 @@
 DB_CONFIG = {
-    'server': 'SADSEBOT\\SQLEXPRESS',
+    'server': 'SadSebot\SQLEXPRESS',
     'database': 'diplombaza',
-    'username': 'SADSEBOT\SadSebot',
-    'password': ''
+    'username': 'sa',
+    'password': '123'
 }
