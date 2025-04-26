@@ -2,22 +2,33 @@ const tg = window.Telegram.WebApp;
 tg.expand();
 tg.MainButton.hide();
 
+// Базовый URL API
+const API_BASE_URL = 'http://localhost:3000/api';
+
 document.addEventListener('DOMContentLoaded', () => {
-    loadRequests();
-    updateStats();
-    
-    // Обработчики событий
+    initApp();
+});
+
+async function initApp() {
+    try {
+        await loadRequests();
+        await updateStats();
+        setupEventListeners();
+    } catch (error) {
+        console.error('Initialization error:', error);
+        tg.showAlert('Ошибка инициализации приложения');
+    }
+}
+
+function setupEventListeners() {
     document.getElementById('refresh-btn').addEventListener('click', loadRequests);
     document.getElementById('search-btn').addEventListener('click', searchRequests);
     document.getElementById('status-filter').addEventListener('change', loadRequests);
     
-    // Поиск при нажатии Enter
     document.getElementById('search-input').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            searchRequests();
-        }
+        if (e.key === 'Enter') searchRequests();
     });
-});
+}
 
 async function loadRequests() {
     const container = document.getElementById('requests-container');
@@ -26,19 +37,30 @@ async function loadRequests() {
     const statusFilter = document.getElementById('status-filter').value;
     
     try {
-        let url = '/api/requests';
-        if (statusFilter !== 'all') {
-            url += `?status=${statusFilter}`;
+        let url = `${API_BASE_URL}/requests`;
+        const params = new URLSearchParams();
+        
+        if (statusFilter !== 'all') params.append('status', statusFilter);
+        if (tg.initDataUnsafe.user) params.append('user_id', tg.initDataUnsafe.user.id);
+        
+        url += `?${params.toString()}`;
+        
+        const response = await fetch(url, {
+            headers: {
+                'Telegram-Init-Data': tg.initData
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const response = await fetch(url);
         const requests = await response.json();
-        
         renderRequests(requests);
         updateStats(requests);
     } catch (error) {
-        container.innerHTML = '<div class="loading">Ошибка загрузки данных</div>';
-        console.error(error);
+        container.innerHTML = '<div class="error">Ошибка загрузки данных</div>';
+        console.error('Load requests error:', error);
         tg.showAlert('Ошибка загрузки заявок');
     }
 }
@@ -51,12 +73,24 @@ async function searchRequests() {
     container.innerHTML = '<div class="loading">Поиск...</div>';
     
     try {
-        const response = await fetch(`/api/requests/search?query=${encodeURIComponent(searchQuery)}`);
+        const params = new URLSearchParams({ query: searchQuery });
+        if (tg.initDataUnsafe.user) params.append('user_id', tg.initDataUnsafe.user.id);
+        
+        const response = await fetch(`${API_BASE_URL}/requests/search?${params.toString()}`, {
+            headers: {
+                'Telegram-Init-Data': tg.initData
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const requests = await response.json();
         renderRequests(requests);
     } catch (error) {
-        container.innerHTML = '<div class="loading">Ошибка поиска</div>';
-        console.error(error);
+        container.innerHTML = '<div class="error">Ошибка поиска</div>';
+        console.error('Search error:', error);
         tg.showAlert('Ошибка поиска');
     }
 }
@@ -64,8 +98,8 @@ async function searchRequests() {
 function renderRequests(requests) {
     const container = document.getElementById('requests-container');
     
-    if (requests.length === 0) {
-        container.innerHTML = '<div class="loading">Нет заявок</div>';
+    if (!requests || requests.length === 0) {
+        container.innerHTML = '<div class="empty">Нет заявок</div>';
         return;
     }
     
@@ -77,15 +111,19 @@ function renderRequests(requests) {
         
         const statusClass = `status-${request.status || 'new'}`;
         const statusText = getStatusText(request.status);
+        const requestDate = request.created_at || request.request_date || new Date().toISOString();
         
         card.innerHTML = `
             <div class="request-header">
-                <span class="request-name">${request.name}</span>
+                <span class="request-name">${escapeHtml(request.name)}</span>
                 <span class="request-status ${statusClass}">${statusText}</span>
             </div>
-            <a href="tel:${request.phone}" class="request-phone">${request.phone}</a>
-            <div class="request-date">${new Date(request.request_date).toLocaleString()}</div>
-            <div class="request-message">${request.message}</div>
+            <div class="request-contacts">
+                <a href="tel:${request.phone}" class="request-phone">${formatPhone(request.phone)}</a>
+                ${request.email ? `<a href="mailto:${request.email}" class="request-email">${escapeHtml(request.email)}</a>` : ''}
+            </div>
+            <div class="request-date">${formatDate(requestDate)}</div>
+            ${request.message ? `<div class="request-message">${escapeHtml(request.message)}</div>` : ''}
             
             <select class="status-select" data-request-id="${request.id}">
                 <option value="new" ${request.status === 'new' ? 'selected' : ''}>Новая</option>
@@ -94,52 +132,86 @@ function renderRequests(requests) {
             </select>
         `;
         
-        // Обработчик изменения статуса
-        card.querySelector('.status-select').addEventListener('change', async (e) => {
-            const requestId = e.target.getAttribute('data-request-id');
-            const newStatus = e.target.value;
-            
-            try {
-                const response = await fetch(`/api/zayavki/${requestId}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ status: newStatus })
-                });
-                
-                if (response.ok) {
-                    loadRequests(); // Обновляем список
-                } else {
-                    const error = await response.json();
-                    tg.showAlert(error.error || 'Ошибка обновления статуса');
-                }
-            } catch (error) {
-                tg.showAlert('Ошибка соединения');
-                console.error(error);
-            }
-        });
-        
+        card.querySelector('.status-select').addEventListener('change', (e) => updateRequestStatus(e));
         container.appendChild(card);
     });
 }
 
-function updateStats(requests) {
-    // В реальном приложении нужно делать отдельный запрос для статистики
-    // или анализировать полученные requests
-    document.getElementById('new-count').textContent = '0';
-    document.getElementById('progress-count').textContent = '0';
-    document.getElementById('completed-count').textContent = '0';
+async function updateRequestStatus(event) {
+    const select = event.target;
+    const requestId = select.getAttribute('data-request-id');
+    const newStatus = select.value;
     
-    if (requests) {
-        const newCount = requests.filter(r => r.status === 'new').length;
-        const progressCount = requests.filter(r => r.status === 'in_progress').length;
-        const completedCount = requests.filter(r => r.status === 'completed').length;
+    try {
+        const response = await fetch(`${API_BASE_URL}/requests/${requestId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Telegram-Init-Data': tg.initData
+            },
+            body: JSON.stringify({ status: newStatus })
+        });
         
-        document.getElementById('new-count').textContent = newCount;
-        document.getElementById('progress-count').textContent = progressCount;
-        document.getElementById('completed-count').textContent = completedCount;
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Ошибка обновления статуса');
+        }
+        
+        tg.showAlert('Статус успешно обновлен');
+        loadRequests();
+    } catch (error) {
+        console.error('Update status error:', error);
+        tg.showAlert(error.message || 'Ошибка обновления статуса');
+        loadRequests(); // Восстанавливаем предыдущее состояние
     }
+}
+
+async function updateStats() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/requests/stats`, {
+            headers: {
+                'Telegram-Init-Data': tg.initData
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const stats = await response.json();
+        
+        document.getElementById('new-count').textContent = stats.new || 0;
+        document.getElementById('progress-count').textContent = stats.in_progress || 0;
+        document.getElementById('completed-count').textContent = stats.completed || 0;
+    } catch (error) {
+        console.error('Update stats error:', error);
+        // Можно оставить предыдущие значения или показать ошибку
+    }
+}
+
+// Вспомогательные функции
+function escapeHtml(unsafe) {
+    return unsafe?.toString()
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;") || '';
+}
+
+function formatPhone(phone) {
+    return phone?.toString().replace(/(\d{1})(\d{3})(\d{3})(\d{2})(\d{2})/, '+$1 ($2) $3-$4-$5') || '';
+}
+
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('ru-RU', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
 }
 
 function getStatusText(status) {

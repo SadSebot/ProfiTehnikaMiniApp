@@ -25,26 +25,6 @@ def get_db_connection():
     except Error as e:
         logger.error(f"Ошибка подключения к MySQL: {str(e)}")
         raise
-@app.route('/api/requests', methods=['POST'])
-def create_zayavka():
-    data = request.json
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-        INSERT INTO zayavki (name, phone, message)
-        VALUES (%s, %s, %s)
-        """, (data['name'], data['phone'], data['message']))
-        
-        conn.commit()
-        return jsonify({"success": True, "message": "Заявка создана"})
-    except Error as e:
-        conn.rollback()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        if 'conn' in locals():
-            conn.close()
 @app.route('/api/test_db')
 def test_db():
     try:
