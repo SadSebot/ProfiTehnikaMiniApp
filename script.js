@@ -11,74 +11,129 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function initApp() {
     try {
-        await loadRequests();
-        await updateStats();
+        // Проверяем доступность API перед началом работы
+        await checkAPIHealth();
+        await Promise.all([loadRequests(), updateStats()]);
         setupEventListeners();
     } catch (error) {
-        console.error('Initialization error:', error);
-        showAlertSafe('Ошибка инициализации приложения');
+        console.error('Init error:', error);
+        showAlertSafe(`Ошибка инициализации: ${error.message}`);
     }
 }
 
-function setupEventListeners() {
-    document.getElementById('refresh-btn').addEventListener('click', loadRequests);
-    document.getElementById('search-btn').addEventListener('click', searchRequests);
-    document.getElementById('status-filter').addEventListener('change', loadRequests);
-    
-    document.getElementById('search-input').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') searchRequests();
-    });
-}
-
-function showAlertSafe(message) {
-    if (tg.showAlert) {
-        try {
-            tg.showAlert(message);
-        } catch (e) {
-            console.warn('showAlert failed:', e);
-            alert(message); // Fallback
+async function safeFetch(url, options = {}) {
+    try {
+        // Добавляем обязательные заголовки
+        const defaultHeaders = {
+            'Content-Type': 'application/json',
+            'Telegram-Init-Data': tg.initData || ''
+        };
+        
+        const response = await fetch(url, {
+            ...options,
+            headers: { ...defaultHeaders, ...options.headers }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => null);
+            throw new Error(errorData?.message || `HTTP Error ${response.status}`);
         }
-    } else {
-        alert(message); // Fallback
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Fetch error:', error);
+        throw new Error(error.message || 'Network request failed');
     }
 }
+function setupEventListeners() {
+    const safeAddListener = (elementId, event, handler) => {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.addEventListener(event, async () => {
+                try {
+                    await handler();
+                } catch (error) {
+                    showAlertSafe(`Ошибка: ${error.message}`);
+                }
+            });
+        }
+    };
+    
+    safeAddListener('refresh-btn', 'click', loadRequests);
+    safeAddListener('search-btn', 'click', searchRequests);
+    safeAddListener('status-filter', 'change', loadRequests);
+    
+    const searchInput = document.getElementById('search-input');
+    if (searchInput) {
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchRequests().catch(console.error);
+        });
+    }
+}
+
+function showAlertSafe(message, duration = 3000) {
+    // Пытаемся использовать Telegram WebApp API
+    if (typeof tg.showAlert === 'function') {
+        tg.showAlert(message).catch(e => {
+            console.warn('Telegram.showAlert failed:', e);
+            showFallbackAlert(message, duration);
+        });
+        return;
+    }
+    
+    // Fallback решение
+    showFallbackAlert(message, duration);
+}
+
+function showFallbackAlert(message, duration) {
+    const alertEl = document.createElement('div');
+    alertEl.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #fff;
+        padding: 12px 24px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        z-index: 1000;
+        animation: alertFadeIn 0.3s ease-out;
+    `;
+    
+    alertEl.textContent = message;
+    document.body.appendChild(alertEl);
+    
+    setTimeout(() => {
+        alertEl.style.animation = 'alertFadeOut 0.3s ease-out';
+        setTimeout(() => alertEl.remove(), 300);
+    }, duration);
+}
+
 
 async function loadRequests() {
     const container = document.getElementById('requests-container');
+    if (!container) return;
+    
     container.innerHTML = '<div class="loading">Загрузка данных...</div>';
     
-    const statusFilter = document.getElementById('status-filter').value;
-    
     try {
-        let url = `${API_BASE_URL}/requests`;
+        const statusFilter = document.getElementById('status-filter')?.value || 'all';
         const params = new URLSearchParams();
         
         if (statusFilter !== 'all') params.append('status', statusFilter);
         if (tg.initDataUnsafe?.user?.id) params.append('user_id', tg.initDataUnsafe.user.id);
         
-        url += `?${params.toString()}`;
+        // 4. Используем safeFetch вместо прямого fetch
+        const requests = await safeFetch(`${API_BASE_URL}/requests?${params.toString()}`);
         
-        const response = await fetch(url, {
-            headers: {
-                'Telegram-Init-Data': tg.initData || '',
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-        }
-        
-        const requests = await response.json();
         renderRequests(requests);
         updateStats(requests);
     } catch (error) {
-        container.innerHTML = '<div class="error">Ошибка загрузки данных</div>';
-        console.error('Load requests error:', error);
-        showAlertSafe(error.message || 'Ошибка загрузки заявок');
+        container.innerHTML = '<div class="error">Ошибка загрузки</div>';
+        showAlertSafe(`Не удалось загрузить данные: ${error.message}`);
     }
 }
+
 
 async function searchRequests() {
     const searchQuery = document.getElementById('search-input').value.trim();
