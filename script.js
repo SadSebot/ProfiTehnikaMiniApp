@@ -2,7 +2,7 @@ const tg = window.Telegram.WebApp;
 tg.expand();
 tg.MainButton.hide();
 
-// Базовый URL API
+// Базовый URL API (замените на ваш продакшен URL)
 const API_BASE_URL = 'http://localhost:3000/api';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -16,7 +16,7 @@ async function initApp() {
         setupEventListeners();
     } catch (error) {
         console.error('Initialization error:', error);
-        tg.showAlert('Ошибка инициализации приложения');
+        showAlertSafe('Ошибка инициализации приложения');
     }
 }
 
@@ -30,6 +30,19 @@ function setupEventListeners() {
     });
 }
 
+function showAlertSafe(message) {
+    if (tg.showAlert) {
+        try {
+            tg.showAlert(message);
+        } catch (e) {
+            console.warn('showAlert failed:', e);
+            alert(message); // Fallback
+        }
+    } else {
+        alert(message); // Fallback
+    }
+}
+
 async function loadRequests() {
     const container = document.getElementById('requests-container');
     container.innerHTML = '<div class="loading">Загрузка данных...</div>';
@@ -41,18 +54,20 @@ async function loadRequests() {
         const params = new URLSearchParams();
         
         if (statusFilter !== 'all') params.append('status', statusFilter);
-        if (tg.initDataUnsafe.user) params.append('user_id', tg.initDataUnsafe.user.id);
+        if (tg.initDataUnsafe?.user?.id) params.append('user_id', tg.initDataUnsafe.user.id);
         
         url += `?${params.toString()}`;
         
         const response = await fetch(url, {
             headers: {
-                'Telegram-Init-Data': tg.initData
+                'Telegram-Init-Data': tg.initData || '',
+                'Content-Type': 'application/json'
             }
         });
         
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
         }
         
         const requests = await response.json();
@@ -61,7 +76,7 @@ async function loadRequests() {
     } catch (error) {
         container.innerHTML = '<div class="error">Ошибка загрузки данных</div>';
         console.error('Load requests error:', error);
-        tg.showAlert('Ошибка загрузки заявок');
+        showAlertSafe(error.message || 'Ошибка загрузки заявок');
     }
 }
 
@@ -74,16 +89,18 @@ async function searchRequests() {
     
     try {
         const params = new URLSearchParams({ query: searchQuery });
-        if (tg.initDataUnsafe.user) params.append('user_id', tg.initDataUnsafe.user.id);
+        if (tg.initDataUnsafe?.user?.id) params.append('user_id', tg.initDataUnsafe.user.id);
         
         const response = await fetch(`${API_BASE_URL}/requests/search?${params.toString()}`, {
             headers: {
-                'Telegram-Init-Data': tg.initData
+                'Telegram-Init-Data': tg.initData || '',
+                'Content-Type': 'application/json'
             }
         });
         
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
         }
         
         const requests = await response.json();
@@ -91,7 +108,7 @@ async function searchRequests() {
     } catch (error) {
         container.innerHTML = '<div class="error">Ошибка поиска</div>';
         console.error('Search error:', error);
-        tg.showAlert('Ошибка поиска');
+        showAlertSafe(error.message || 'Ошибка поиска');
     }
 }
 
@@ -147,22 +164,22 @@ async function updateRequestStatus(event) {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
-                'Telegram-Init-Data': tg.initData
+                'Telegram-Init-Data': tg.initData || ''
             },
             body: JSON.stringify({ status: newStatus })
         });
         
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.message || 'Ошибка обновления статуса');
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
         }
         
-        tg.showAlert('Статус успешно обновлен');
+        showAlertSafe('Статус успешно обновлен');
         loadRequests();
     } catch (error) {
         console.error('Update status error:', error);
-        tg.showAlert(error.message || 'Ошибка обновления статуса');
-        loadRequests(); // Восстанавливаем предыдущее состояние
+        showAlertSafe(error.message || 'Ошибка обновления статуса');
+        loadRequests();
     }
 }
 
@@ -170,7 +187,8 @@ async function updateStats() {
     try {
         const response = await fetch(`${API_BASE_URL}/requests/stats`, {
             headers: {
-                'Telegram-Init-Data': tg.initData
+                'Telegram-Init-Data': tg.initData || '',
+                'Content-Type': 'application/json'
             }
         });
         
@@ -185,7 +203,6 @@ async function updateStats() {
         document.getElementById('completed-count').textContent = stats.completed || 0;
     } catch (error) {
         console.error('Update stats error:', error);
-        // Можно оставить предыдущие значения или показать ошибку
     }
 }
 
