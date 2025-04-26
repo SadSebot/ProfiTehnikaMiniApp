@@ -12,7 +12,6 @@ document.addEventListener('DOMContentLoaded', () => {
 async function initApp() {
     try {
         // Проверяем доступность API перед началом работы
-        await checkAPIHealth();
         await Promise.all([loadRequests(), updateStats()]);
         setupEventListeners();
     } catch (error) {
