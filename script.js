@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function initApp() {
     try {
         // Проверяем доступность API перед началом работы
+        await checkAPIHealth();
         await Promise.all([loadRequests(), updateStats()]);
         setupEventListeners();
     } catch (error) {
@@ -19,7 +20,16 @@ async function initApp() {
         showAlertSafe(`Ошибка инициализации: ${error.message}`);
     }
 }
-
+async function checkAPIHealth() {
+    try {
+        const health = await safeFetch(`${API_BASE_URL}/health`);
+        if (!health?.status === 'healthy') {
+            throw new Error('API недоступен');
+        }
+    } catch (error) {
+        throw new Error('Сервер не отвечает. Попробуйте позже.');
+    }
+}
 async function safeFetch(url, options = {}) {
     try {
         // Добавляем обязательные заголовки
@@ -45,29 +55,13 @@ async function safeFetch(url, options = {}) {
     }
 }
 function setupEventListeners() {
-    const safeAddListener = (elementId, event, handler) => {
-        const element = document.getElementById(elementId);
-        if (element) {
-            element.addEventListener(event, async () => {
-                try {
-                    await handler();
-                } catch (error) {
-                    showAlertSafe(`Ошибка: ${error.message}`);
-                }
-            });
-        }
-    };
+    document.getElementById('refresh-btn').addEventListener('click', loadRequests);
+    document.getElementById('search-btn').addEventListener('click', searchRequests);
+    document.getElementById('status-filter').addEventListener('change', loadRequests);
     
-    safeAddListener('refresh-btn', 'click', loadRequests);
-    safeAddListener('search-btn', 'click', searchRequests);
-    safeAddListener('status-filter', 'change', loadRequests);
-    
-    const searchInput = document.getElementById('search-input');
-    if (searchInput) {
-        searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') searchRequests().catch(console.error);
-        });
-    }
+    document.getElementById('search-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') searchRequests();
+    });
 }
 
 function showAlertSafe(message, duration = 3000) {
