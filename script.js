@@ -151,18 +151,47 @@ async function updateRequestStatus(event) {
 // Обновление статистики
 async function updateStats() {
     try {
-        const stats = await makeRequest(`${API_BASE_URL}/requests/stats`);
+        const response = await fetch(`${API_BASE_URL}/requests/stats`, {
+            headers: {
+                'Content-Type': 'application/json',
+                'Telegram-Init-Data': window.Telegram?.WebApp?.initData || ''
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `Ошибка сервера: ${response.status}`);
+        }
+
+        const stats = await response.json();
         
+        // Безопасное обновление счетчиков
         const updateCounter = (id, value) => {
             const element = document.getElementById(id);
-            if (element) element.textContent = value || 0;
+            if (element) element.textContent = value ?? 0;
         };
 
         updateCounter('new-count', stats.new);
         updateCounter('progress-count', stats.in_progress);
         updateCounter('completed-count', stats.completed);
+
     } catch (error) {
-        console.error('Failed to update stats:', error);
+        console.error('Update stats error:', error);
+        
+        // Восстановление предыдущих значений или установка 0
+        const resetCounters = () => {
+            ['new-count', 'progress-count', 'completed-count'].forEach(id => {
+                const element = document.getElementById(id);
+                if (element) element.textContent = '0';
+            });
+        };
+        
+        resetCounters();
+        
+        // Показываем ошибку только если это не 500 ошибка сервера
+        if (!error.message.includes('500')) {
+            showAlertSafe(`Ошибка статистики: ${error.message}`);
+        }
     }
 }
 
