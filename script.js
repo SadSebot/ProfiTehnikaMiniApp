@@ -1,175 +1,226 @@
-const tg = window.Telegram.WebApp;
-tg.expand();
-tg.MainButton.hide();
-
-// Базовый URL API (замените на ваш продакшен URL)
-const API_BASE_URL = 'http://localhost:3000/api';
-
-document.addEventListener('DOMContentLoaded', () => {
-    initApp();
-});
-
-async function initApp() {
-    try {
-        // Проверяем доступность API перед началом работы
-        await checkAPIHealth();
-        await Promise.all([loadRequests(), updateStats()]);
-        setupEventListeners();
-    } catch (error) {
-        console.error('Init error:', error);
-        showAlertSafe(`Ошибка инициализации: ${error.message}`);
-    }
+const tg = window.Telegram?.WebApp;
+if (tg) {
+    tg.expand();
+    tg.MainButton?.hide();
 }
+
+// Конфигурация
+const API_BASE_URL = 'http://localhost:3000/api';
+const IS_TELEGRAM_WEBAPP = !!window.Telegram?.WebApp;
+const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
+
+// Проверка доступности API
 async function checkAPIHealth() {
     try {
-        const health = await safeFetch(`${API_BASE_URL}/health`);
-        if (!health?.status === 'healthy') {
-            throw new Error('API недоступен');
-        }
+        const response = await fetch(`${API_BASE_URL}/health`);
+        if (!response.ok) throw new Error('API не отвечает');
+        const data = await response.json();
+        return data.status === 'healthy';
     } catch (error) {
-        throw new Error('Сервер не отвечает. Попробуйте позже.');
+        console.error('Health check failed:', error);
+        return false;
     }
-}
-async function safeFetch(url, options = {}) {
-    try {
-        // Добавляем обязательные заголовки
-        const defaultHeaders = {
-            'Content-Type': 'application/json',
-            'Telegram-Init-Data': tg.initData || ''
-        };
-        
-        const response = await fetch(url, {
-            ...options,
-            headers: { ...defaultHeaders, ...options.headers }
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => null);
-            throw new Error(errorData?.message || `HTTP Error ${response.status}`);
-        }
-        
-        return await response.json();
-    } catch (error) {
-        console.error('Fetch error:', error);
-        throw new Error(error.message || 'Network request failed');
-    }
-}
-function setupEventListeners() {
-    document.getElementById('refresh-btn').addEventListener('click', loadRequests);
-    document.getElementById('search-btn').addEventListener('click', searchRequests);
-    document.getElementById('status-filter').addEventListener('change', loadRequests);
-    
-    document.getElementById('search-input').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') searchRequests();
-    });
 }
 
-function showAlertSafe(message, duration = 3000) {
-    // Пытаемся использовать Telegram WebApp API
-    if (typeof tg.showAlert === 'function') {
-        tg.showAlert(message).catch(e => {
-            console.warn('Telegram.showAlert failed:', e);
-            showFallbackAlert(message, duration);
-        });
-        return;
+// Универсальный метод для запросов
+async function makeRequest(url, method = 'GET', body = null) {
+    const headers = {
+        'Content-Type': 'application/json',
+    };
+
+    // Добавляем Telegram Init Data если доступно
+    if (IS_TELEGRAM_WEBAPP && tg.initData) {
+        headers['Telegram-Init-Data'] = tg.initData;
     }
-    
-    // Fallback решение
-    showFallbackAlert(message, duration);
+
+    const config = {
+        method,
+        headers,
+    };
+
+    if (body) {
+        config.body = JSON.stringify(body);
+    }
+
+    try {
+        const response = await fetch(url, config);
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || `Ошибка ${response.status}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error(`Request to ${url} failed:`, error);
+        throw error;
+    }
+}
+
+// Безопасное отображение сообщений
+function showAlert(message, duration = 3000) {
+    if (IS_TELEGRAM_WEBAPP && tg.showAlert) {
+        tg.showAlert(message).catch(() => showFallbackAlert(message, duration));
+    } else {
+        showFallbackAlert(message, duration);
+    }
 }
 
 function showFallbackAlert(message, duration) {
     const alertEl = document.createElement('div');
-    alertEl.style.cssText = `
-        position: fixed;
-        top: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: #fff;
-        padding: 12px 24px;
-        border-radius: 8px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-        z-index: 1000;
-        animation: alertFadeIn 0.3s ease-out;
-    `;
-    
+    alertEl.className = 'custom-alert';
     alertEl.textContent = message;
     document.body.appendChild(alertEl);
-    
+
     setTimeout(() => {
-        alertEl.style.animation = 'alertFadeOut 0.3s ease-out';
+        alertEl.classList.add('hide');
         setTimeout(() => alertEl.remove(), 300);
     }, duration);
 }
 
-
+// Загрузка заявок
 async function loadRequests() {
     const container = document.getElementById('requests-container');
     if (!container) return;
-    
+
     container.innerHTML = '<div class="loading">Загрузка данных...</div>';
-    
+
     try {
         const statusFilter = document.getElementById('status-filter')?.value || 'all';
-        const params = new URLSearchParams();
-        
-        if (statusFilter !== 'all') params.append('status', statusFilter);
-        if (tg.initDataUnsafe?.user?.id) params.append('user_id', tg.initDataUnsafe.user.id);
-        
-        // 4. Используем safeFetch вместо прямого fetch
-        const requests = await safeFetch(`${API_BASE_URL}/requests?${params.toString()}`);
-        
+        const params = new URLSearchParams({ status: statusFilter });
+
+        if (IS_TELEGRAM_WEBAPP && tg.initDataUnsafe?.user?.id) {
+            params.append('user_id', tg.initDataUnsafe.user.id);
+        }
+
+        const requests = await makeRequest(`${API_BASE_URL}/requests?${params.toString()}`);
         renderRequests(requests);
-        updateStats(requests);
+        await updateStats();
     } catch (error) {
         container.innerHTML = '<div class="error">Ошибка загрузки</div>';
-        showAlertSafe(`Не удалось загрузить данные: ${error.message}`);
+        showAlert(`Ошибка: ${error.message}`);
     }
 }
 
-
+// Поиск заявок
 async function searchRequests() {
-    const searchQuery = document.getElementById('search-input').value.trim();
+    const searchQuery = document.getElementById('search-input')?.value?.trim();
     if (!searchQuery) return loadRequests();
-    
+
     const container = document.getElementById('requests-container');
+    if (!container) return;
+
     container.innerHTML = '<div class="loading">Поиск...</div>';
-    
+
     try {
         const params = new URLSearchParams({ query: searchQuery });
-        if (tg.initDataUnsafe?.user?.id) params.append('user_id', tg.initDataUnsafe.user.id);
         
-        const response = await fetch(`${API_BASE_URL}/requests/search?${params.toString()}`, {
-            headers: {
-                'Telegram-Init-Data': tg.initData || '',
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        if (IS_TELEGRAM_WEBAPP && tg.initDataUnsafe?.user?.id) {
+            params.append('user_id', tg.initDataUnsafe.user.id);
         }
-        
-        const requests = await response.json();
+
+        const requests = await makeRequest(`${API_BASE_URL}/requests/search?${params.toString()}`);
         renderRequests(requests);
     } catch (error) {
         container.innerHTML = '<div class="error">Ошибка поиска</div>';
-        console.error('Search error:', error);
-        showAlertSafe(error.message || 'Ошибка поиска');
+        showAlert(`Ошибка поиска: ${error.message}`);
     }
 }
 
+// Обновление статуса
+async function updateRequestStatus(event) {
+    const select = event.target;
+    const requestId = select.getAttribute('data-request-id');
+    const newStatus = select.value;
+
+    try {
+        await makeRequest(
+            `${API_BASE_URL}/requests/${requestId}`,
+            'PUT',
+            { status: newStatus }
+        );
+        
+        showAlert('Статус обновлен');
+        await loadRequests();
+    } catch (error) {
+        showAlert(`Ошибка обновления: ${error.message}`);
+        await loadRequests(); // Восстановление предыдущего состояния
+    }
+}
+
+// Обновление статистики
+async function updateStats() {
+    try {
+        const stats = await makeRequest(`${API_BASE_URL}/requests/stats`);
+        
+        const updateCounter = (id, value) => {
+            const element = document.getElementById(id);
+            if (element) element.textContent = value || 0;
+        };
+
+        updateCounter('new-count', stats.new);
+        updateCounter('progress-count', stats.in_progress);
+        updateCounter('completed-count', stats.completed);
+    } catch (error) {
+        console.error('Failed to update stats:', error);
+    }
+}
+
+// Инициализация приложения
+async function initApp() {
+    try {
+        const isHealthy = await checkAPIHealth();
+        if (!isHealthy) {
+            throw new Error('Сервер недоступен');
+        }
+
+        await Promise.all([loadRequests(), updateStats()]);
+        setupEventListeners();
+    } catch (error) {
+        console.error('Init error:', error);
+        showAlert(`Ошибка инициализации: ${error.message}`);
+    }
+}
+
+// Настройка обработчиков событий
+function setupEventListeners() {
+    const addSafeListener = (id, event, handler) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.addEventListener(event, async () => {
+                try {
+                    await handler();
+                } catch (error) {
+                    showAlert(`Ошибка: ${error.message}`);
+                }
+            });
+        }
+    };
+
+    addSafeListener('refresh-btn', 'click', loadRequests);
+    addSafeListener('search-btn', 'click', searchRequests);
+    addSafeListener('status-filter', 'change', loadRequests);
+
+    const searchInput = document.getElementById('search-input');
+    if (searchInput) {
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchRequests();
+        });
+    }
+}
+
+// Рендер заявок
 function renderRequests(requests) {
     const container = document.getElementById('requests-container');
-    
-    if (!requests || requests.length === 0) {
+    if (!container) return;
+
+    if (!requests?.length) {
         container.innerHTML = '<div class="empty">Нет заявок</div>';
         return;
     }
-    
+
     container.innerHTML = '';
-    
+
     requests.forEach(request => {
         const card = document.createElement('div');
         card.className = 'request-card';
@@ -177,7 +228,7 @@ function renderRequests(requests) {
         const statusClass = `status-${request.status || 'new'}`;
         const statusText = getStatusText(request.status);
         const requestDate = request.created_at || request.request_date || new Date().toISOString();
-        
+
         card.innerHTML = `
             <div class="request-header">
                 <span class="request-name">${escapeHtml(request.name)}</span>
@@ -196,87 +247,42 @@ function renderRequests(requests) {
                 <option value="completed" ${request.status === 'completed' ? 'selected' : ''}>Завершена</option>
             </select>
         `;
-        
-        card.querySelector('.status-select').addEventListener('change', (e) => updateRequestStatus(e));
+
+        card.querySelector('.status-select')?.addEventListener('change', updateRequestStatus);
         container.appendChild(card);
     });
 }
 
-async function updateRequestStatus(event) {
-    const select = event.target;
-    const requestId = select.getAttribute('data-request-id');
-    const newStatus = select.value;
-    
-    try {
-        const response = await fetch(`${API_BASE_URL}/requests/${requestId}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Telegram-Init-Data': tg.initData || ''
-            },
-            body: JSON.stringify({ status: newStatus })
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-        }
-        
-        showAlertSafe('Статус успешно обновлен');
-        loadRequests();
-    } catch (error) {
-        console.error('Update status error:', error);
-        showAlertSafe(error.message || 'Ошибка обновления статуса');
-        loadRequests();
-    }
-}
-
-async function updateStats() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/requests/stats`, {
-            headers: {
-                'Telegram-Init-Data': tg.initData || '',
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const stats = await response.json();
-        
-        document.getElementById('new-count').textContent = stats.new || 0;
-        document.getElementById('progress-count').textContent = stats.in_progress || 0;
-        document.getElementById('completed-count').textContent = stats.completed || 0;
-    } catch (error) {
-        console.error('Update stats error:', error);
-    }
-}
-
 // Вспомогательные функции
 function escapeHtml(unsafe) {
-    return unsafe?.toString()
+    if (!unsafe) return '';
+    return unsafe.toString()
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;") || '';
+        .replace(/'/g, "&#039;");
 }
 
 function formatPhone(phone) {
-    return phone?.toString().replace(/(\d{1})(\d{3})(\d{3})(\d{2})(\d{2})/, '+$1 ($2) $3-$4-$5') || '';
+    if (!phone) return '';
+    const numbers = phone.toString().replace(/\D/g, '');
+    return `+${numbers.substring(0, 1)} (${numbers.substring(1, 4)}) ${numbers.substring(4, 7)}-${numbers.substring(7, 9)}-${numbers.substring(9, 11)}`;
 }
 
 function formatDate(dateString) {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('ru-RU', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
+    try {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('ru-RU', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    } catch {
+        return '';
+    }
 }
 
 function getStatusText(status) {
@@ -287,3 +293,6 @@ function getStatusText(status) {
     };
     return statusMap[status] || 'Новая';
 }
+
+// Запуск приложения
+document.addEventListener('DOMContentLoaded', initApp);
