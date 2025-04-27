@@ -7,7 +7,8 @@ if (tg) {
 // Конфигурация
 const API_BASE_URL = 'http://localhost:3000/api';
 const IS_TELEGRAM_WEBAPP = !!window.Telegram?.WebApp;
-const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
+const IS_DEVELOPMENT = window.location.hostname === 'localhost' || 
+                      window.location.hostname === '127.0.0.1';
 
 // Проверка доступности API
 async function checkAPIHealth() {
