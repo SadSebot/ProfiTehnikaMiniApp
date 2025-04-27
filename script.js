@@ -159,8 +159,7 @@ async function updateStats() {
         });
 
         if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.message || `Ошибка сервера: ${response.status}`);
+            throw new Error(`Ошибка сервера: ${response.status}`);
         }
 
         const stats = await response.json();
@@ -178,20 +177,11 @@ async function updateStats() {
     } catch (error) {
         console.error('Update stats error:', error);
         
-        // Восстановление предыдущих значений или установка 0
-        const resetCounters = () => {
-            ['new-count', 'progress-count', 'completed-count'].forEach(id => {
-                const element = document.getElementById(id);
-                if (element) element.textContent = '0';
-            });
-        };
-        
-        resetCounters();
-        
-        // Показываем ошибку только если это не 500 ошибка сервера
-        if (!error.message.includes('500')) {
-            showAlertSafe(`Ошибка статистики: ${error.message}`);
-        }
+        // Устанавливаем нулевые значения при ошибке
+        ['new-count', 'progress-count', 'completed-count'].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) element.textContent = '0';
+        });
     }
 }
 
