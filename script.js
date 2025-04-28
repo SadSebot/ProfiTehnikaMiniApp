@@ -1,9 +1,11 @@
 const tg = window.Telegram?.WebApp;
 if (tg) {
-    tg.expand();
-    tg.MainButton?.hide();
+  tg.expand(); // Раскрываем на весь экран
+  tg.enableClosingConfirmation(); // Подтверждение закрытия
+  console.log('Telegram WebApp initialized:', tg.initDataUnsafe);
+} else {
+  console.warn('Telegram WebApp not detected, running in browser mode');
 }
-
 // Конфигурация
 const API_BASE_URL = 'http://localhost:3000/api';
 const IS_TELEGRAM_WEBAPP = !!window.Telegram?.WebApp;
@@ -83,24 +85,61 @@ async function loadRequests() {
     const container = document.getElementById('requests-container');
     if (!container) return;
   
-    container.innerHTML = '<div class="loading">Загрузка данных...</div>';
+    // Показываем состояние загрузки
+    container.innerHTML = `
+      <div class="loading-state">
+        <div class="loading-spinner"></div>
+        <p>Загрузка данных...</p>
+      </div>
+    `;
   
     try {
-      const statusFilter = document.getElementById('status-filter')?.value || 'all';
-      const params = new URLSearchParams({ status: statusFilter });
-  
-      if (IS_TELEGRAM_WEBAPP && tg.initDataUnsafe?.user?.id) {
-        params.append('user_id', tg.initDataUnsafe.user.id);
+      const statusFilter = document.getElementById('status-filter').value;
+      const userId = tg?.initDataUnsafe?.user?.id;
+      
+      // Формируем URL с параметрами
+      const url = new URL(`${API_BASE_URL}/requests`);
+      const params = new URLSearchParams();
+      
+      if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter);
+      if (userId) params.append('user_id', userId);
+      
+      // Добавляем параметры к URL
+      url.search = params.toString();
+      
+      console.log('Fetching requests from:', url.toString());
+      
+      const response = await fetch(url, {
+        headers: {
+          'Telegram-Init-Data': tg?.initData || ''
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-  
-      const requests = await makeRequest(`${API_BASE_URL}/requests?${params.toString()}`);
-      console.log('Received requests:', requests); // Добавьте это
+      
+      const requests = await response.json();
+      console.log('Received requests:', requests);
+      
+      if (!requests || !requests.length) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <p>Нет заявок по выбранному фильтру</p>
+          </div>
+        `;
+        return;
+      }
+      
       renderRequests(requests);
-      await updateStats();
     } catch (error) {
-      console.error('Load requests error:', error); // И это
-      container.innerHTML = '<div class="error">Ошибка загрузки</div>';
-      showAlert(`Ошибка: ${error.message}`);
+      console.error('Failed to load requests:', error);
+      container.innerHTML = `
+        <div class="error-state">
+          <p>Ошибка загрузки данных</p>
+          <button onclick="loadRequests()">Повторить</button>
+        </div>
+      `;
     }
   }
 
