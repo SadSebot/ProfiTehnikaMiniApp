@@ -82,67 +82,54 @@ function showFallbackAlert(message, duration) {
 
 // Загрузка заявок
 async function loadRequests() {
+    console.log('Loading requests...');
     const container = document.getElementById('requests-container');
     if (!container) return;
   
-    // Показываем состояние загрузки
-    container.innerHTML = `
-      <div class="loading-state">
-        <div class="loading-spinner"></div>
-        <p>Загрузка данных...</p>
-      </div>
-    `;
-  
     try {
       const statusFilter = document.getElementById('status-filter').value;
-      const userId = tg?.initDataUnsafe?.user?.id;
+      const userId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
       
-      // Формируем URL с параметрами
       const url = new URL(`${API_BASE_URL}/requests`);
-      const params = new URLSearchParams();
+      if (statusFilter !== 'all') url.searchParams.append('status', statusFilter);
+      if (userId) url.searchParams.append('user_id', userId);
       
-      if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter);
-      if (userId) params.append('user_id', userId);
-      
-      // Добавляем параметры к URL
-      url.search = params.toString();
-      
-      console.log('Fetching requests from:', url.toString());
+      console.log('Fetching from:', url.toString());
       
       const response = await fetch(url, {
         headers: {
-          'Telegram-Init-Data': tg?.initData || ''
+          'Telegram-Init-Data': window.Telegram?.WebApp?.initData || ''
         }
       });
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`HTTP error ${response.status}`);
       }
       
       const requests = await response.json();
       console.log('Received requests:', requests);
       
-      if (!requests || !requests.length) {
-        container.innerHTML = `
-          <div class="empty-state">
-            <p>Нет заявок по выбранному фильтру</p>
-          </div>
-        `;
-        return;
-      }
-      
       renderRequests(requests);
     } catch (error) {
       console.error('Failed to load requests:', error);
-      container.innerHTML = `
-        <div class="error-state">
-          <p>Ошибка загрузки данных</p>
-          <button onclick="loadRequests()">Повторить</button>
-        </div>
-      `;
+      showAlert(`Ошибка загрузки: ${error.message}`);
     }
   }
-
+  app.get('/api/test', async (req, res) => {
+    try {
+      const [rows] = await pool.query('SELECT 1 + 1 AS solution');
+      res.json({
+        dbConnected: true,
+        solution: rows[0].solution,
+        timestamp: new Date()
+      });
+    } catch (error) {
+      res.status(500).json({
+        dbConnected: false,
+        error: error.message
+      });
+    }
+  });
 // Поиск заявок
 async function searchRequests() {
     const searchQuery = document.getElementById('search-input')?.value?.trim();
