@@ -82,25 +82,27 @@ function showFallbackAlert(message, duration) {
 async function loadRequests() {
     const container = document.getElementById('requests-container');
     if (!container) return;
-
+  
     container.innerHTML = '<div class="loading">Загрузка данных...</div>';
-
+  
     try {
-        const statusFilter = document.getElementById('status-filter')?.value || 'all';
-        const params = new URLSearchParams({ status: statusFilter });
-
-        if (IS_TELEGRAM_WEBAPP && tg.initDataUnsafe?.user?.id) {
-            params.append('id', tg.initDataUnsafe.user.id);
-        }
-
-        const requests = await makeRequest(`${API_BASE_URL}/requests?${params.toString()}`);
-        renderRequests(requests);
-        await updateStats();
+      const statusFilter = document.getElementById('status-filter')?.value || 'all';
+      const params = new URLSearchParams({ status: statusFilter });
+  
+      if (IS_TELEGRAM_WEBAPP && tg.initDataUnsafe?.user?.id) {
+        params.append('user_id', tg.initDataUnsafe.user.id);
+      }
+  
+      const requests = await makeRequest(`${API_BASE_URL}/requests?${params.toString()}`);
+      console.log('Received requests:', requests); // Добавьте это
+      renderRequests(requests);
+      await updateStats();
     } catch (error) {
-        container.innerHTML = '<div class="error">Ошибка загрузки</div>';
-        showAlert(`Ошибка: ${error.message}`);
+      console.error('Load requests error:', error); // И это
+      container.innerHTML = '<div class="error">Ошибка загрузки</div>';
+      showAlert(`Ошибка: ${error.message}`);
     }
-}
+  }
 
 // Поиск заявок
 async function searchRequests() {
@@ -231,46 +233,53 @@ function setupEventListeners() {
 // Рендер заявок
 function renderRequests(requests) {
     const container = document.getElementById('requests-container');
-    if (!container) return;
-
-    if (!requests?.length) {
-        container.innerHTML = '<div class="empty">Нет заявок</div>';
-        return;
+    if (!container) {
+      console.error('Container not found');
+      return;
     }
-
+  
+    console.log('Rendering requests:', requests);
+  
+    if (!requests?.length) {
+      console.log('No requests received');
+      container.innerHTML = '<div class="empty">Нет заявок</div>';
+      return;
+    }
+  
     container.innerHTML = '';
-
+  
     requests.forEach(request => {
-        const card = document.createElement('div');
-        card.className = 'request-card';
+      console.log('Processing request:', request);
+      const card = document.createElement('div');
+      card.className = 'request-card';
+      
+      const statusClass = `status-${request.status || 'new'}`;
+      const statusText = getStatusText(request.status);
+      const requestDate = request.created_at || request.request_date || new Date().toISOString();
+  
+      card.innerHTML = `
+        <div class="request-header">
+          <span class="request-name">${escapeHtml(request.name || 'Без имени')}</span>
+          <span class="request-status ${statusClass}">${statusText}</span>
+        </div>
+        <div class="request-contacts">
+          ${request.phone ? `<a href="tel:${request.phone}" class="request-phone">${formatPhone(request.phone)}</a>` : ''}
+          ${request.email ? `<a href="mailto:${request.email}" class="request-email">${escapeHtml(request.email)}</a>` : ''}
+        </div>
+        <div class="request-date">${formatDate(requestDate)}</div>
+        ${request.message ? `<div class="request-message">${escapeHtml(request.message)}</div>` : ''}
         
-        const statusClass = `status-${request.status || 'new'}`;
-        const statusText = getStatusText(request.status);
-        const requestDate = request.created_at || request.request_date || new Date().toISOString();
-
-        card.innerHTML = `
-            <div class="request-header">
-                <span class="request-name">${escapeHtml(request.name)}</span>
-                <span class="request-status ${statusClass}">${statusText}</span>
-            </div>
-            <div class="request-contacts">
-                <a href="tel:${request.phone}" class="request-phone">${formatPhone(request.phone)}</a>
-                ${request.email ? `<a href="mailto:${request.email}" class="request-email">${escapeHtml(request.email)}</a>` : ''}
-            </div>
-            <div class="request-date">${formatDate(requestDate)}</div>
-            ${request.message ? `<div class="request-message">${escapeHtml(request.message)}</div>` : ''}
-            
-            <select class="status-select" data-request-id="${request.id}">
-                <option value="new" ${request.status === 'new' ? 'selected' : ''}>Новая</option>
-                <option value="in_progress" ${request.status === 'in_progress' ? 'selected' : ''}>В работе</option>
-                <option value="completed" ${request.status === 'completed' ? 'selected' : ''}>Завершена</option>
-            </select>
-        `;
-
-        card.querySelector('.status-select')?.addEventListener('change', updateRequestStatus);
-        container.appendChild(card);
+        <select class="status-select" data-request-id="${request.id}">
+          <option value="new" ${request.status === 'new' ? 'selected' : ''}>Новая</option>
+          <option value="in_progress" ${request.status === 'in_progress' ? 'selected' : ''}>В работе</option>
+          <option value="completed" ${request.status === 'completed' ? 'selected' : ''}>Завершена</option>
+        </select>
+      `;
+  
+      card.querySelector('.status-select')?.addEventListener('change', updateRequestStatus);
+      container.appendChild(card);
     });
-}
+  }
 
 // Вспомогательные функции
 function escapeHtml(unsafe) {
