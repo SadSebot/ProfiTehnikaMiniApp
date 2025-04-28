@@ -26,12 +26,11 @@ async function checkAPIHealth() {
 // Универсальный метод для запросов
 async function makeRequest(url, method = 'GET', body = null) {
     const headers = {
-        'Content-Type': 'application/json',
+      'Content-Type': 'application/json',
     };
-
-    // Добавляем Telegram Init Data если доступно
-    if (IS_TELEGRAM_WEBAPP && tg.initData) {
-        headers['Telegram-Init-Data'] = tg.initData;
+  
+    if (IS_TELEGRAM_WEBAPP && window.Telegram?.WebApp?.initData) {
+      headers['Telegram-Init-Data'] = window.Telegram.WebApp.initData;
     }
 
     const config = {
@@ -91,7 +90,7 @@ async function loadRequests() {
         const params = new URLSearchParams({ status: statusFilter });
 
         if (IS_TELEGRAM_WEBAPP && tg.initDataUnsafe?.user?.id) {
-            params.append('user_id', tg.initDataUnsafe.user.id);
+            params.append('id', tg.initDataUnsafe.user.id);
         }
 
         const requests = await makeRequest(`${API_BASE_URL}/requests?${params.toString()}`);
@@ -117,7 +116,7 @@ async function searchRequests() {
         const params = new URLSearchParams({ query: searchQuery });
         
         if (IS_TELEGRAM_WEBAPP && tg.initDataUnsafe?.user?.id) {
-            params.append('user_id', tg.initDataUnsafe.user.id);
+            params.append('id', tg.initDataUnsafe.user.id);
         }
 
         const requests = await makeRequest(`${API_BASE_URL}/requests/search?${params.toString()}`);
