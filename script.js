@@ -92,7 +92,7 @@ async function loadRequests() {
       
       const url = new URL(`${API_BASE_URL}/requests`);
       if (statusFilter !== 'all') url.searchParams.append('status', statusFilter);
-      if (userId) url.searchParams.append('user_id', userId);
+      if (userId) url.searchParams.append('id', userId);
       
       console.log('Fetching from:', url.toString());
       
@@ -115,21 +115,6 @@ async function loadRequests() {
       showAlert(`Ошибка загрузки: ${error.message}`);
     }
   }
-  app.get('/api/test', async (req, res) => {
-    try {
-      const [rows] = await pool.query('SELECT 1 + 1 AS solution');
-      res.json({
-        dbConnected: true,
-        solution: rows[0].solution,
-        timestamp: new Date()
-      });
-    } catch (error) {
-      res.status(500).json({
-        dbConnected: false,
-        error: error.message
-      });
-    }
-  });
 // Поиск заявок
 async function searchRequests() {
     const searchQuery = document.getElementById('search-input')?.value?.trim();
