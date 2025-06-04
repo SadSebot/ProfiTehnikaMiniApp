@@ -308,7 +308,7 @@ async function initApp() {
     setInterval(async () => {
       await loadRequests();
       await updateStats();
-    }, 30000);
+    }, 4000);
     
   } catch (error) {
     console.error('App initialization failed:', error);
