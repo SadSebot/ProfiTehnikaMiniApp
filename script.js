@@ -322,6 +322,25 @@ document.addEventListener('DOMContentLoaded', initApp);
 // Настройка обработчиков событий
 function setupEventListeners() {
     // Универсальная функция для безопасного добавления обработчиков
+    const refreshBtn = document.getElementById('refresh-btn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner"></span> Обновление...';
+            
+            try {
+                await loadRequests();
+                showAlert('Данные успешно обновлены', 2000);
+            } catch (error) {
+                console.error('Refresh error:', error);
+                showAlert('Ошибка при обновлении', 2000);
+            } finally {
+                this.disabled = false;
+                this.innerHTML = 'Обновить';
+            }
+        });
+    }
     const addSafeListener = (elementOrId, event, handler) => {
         const element = typeof elementOrId === 'string' 
             ? document.getElementById(elementOrId) 
