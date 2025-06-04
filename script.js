@@ -399,23 +399,28 @@ function escapeHtml(unsafe) {
 }
 
 function formatPhone(phone) {
-    if (!phone) return '';
-    const numbers = phone.toString().replace(/\D/g, '');
-    return `+${numbers.substring(0, 1)} (${numbers.substring(1, 4)}) ${numbers.substring(4, 7)}-${numbers.substring(7, 9)}-${numbers.substring(9, 11)}`;
+    if (!phone) return 'Не указан';
+    const cleaned = phone.toString().replace(/\D/g, '');
+    const match = cleaned.match(/^(\d{1})(\d{3})(\d{3})(\d{2})(\d{2})$/);
+    if (match) {
+        return `+${match[1]} (${match[2]}) ${match[3]}-${match[4]}-${match[5]}`;
+    }
+    return cleaned;
 }
 
 function formatDate(dateString) {
     try {
         const date = new Date(dateString);
-        return date.toLocaleDateString('ru-RU', {
+        return date.toLocaleString('ru-RU', {
             day: 'numeric',
             month: 'long',
             year: 'numeric',
             hour: '2-digit',
             minute: '2-digit'
         });
-    } catch {
-        return '';
+    } catch (e) {
+        console.error('Date formatting error:', e);
+        return 'Дата не указана';
     }
 }
 
@@ -425,7 +430,7 @@ function getStatusText(status) {
         'in_progress': 'В работе',
         'completed': 'Завершена'
     };
-    return statusMap[status] || 'Новая';
+    return statusMap[status] || 'Неизвестный статус';
 }
 
 // Запуск приложения
