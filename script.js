@@ -116,11 +116,7 @@ function showFallbackAlert(message, duration) {
 
 // Загрузка заявок
 async function loadRequests() {
-    const refreshBtn = document.getElementById('refresh-btn');
   try {
-    if (refreshBtn) {
-            refreshBtn.disabled = true;
-        }
     const tg = window.Telegram?.WebApp;
     const url = new URL(`${API_BASE_URL}/requests`);
     
