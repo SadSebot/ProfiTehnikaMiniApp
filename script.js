@@ -25,7 +25,16 @@ async function checkAPIHealth() {
         console.error('Health check failed:', error);
         return false;
     }
-}
+} 
+
+let appState = {
+  requests: [],
+  stats: {
+    new: 0,
+    in_progress: 0,
+    completed: 0
+  }
+};
 
 // Универсальный метод для запросов
 async function makeRequest(url, method = 'GET', body = null) {
@@ -101,66 +110,31 @@ function showFallbackAlert(message, duration) {
 
 // Загрузка заявок
 async function loadRequests() {
-    const container = document.getElementById('requests-container');
-    if (!container) return;
-  
-    // Показываем состояние загрузки
-    container.innerHTML = `
-      <div class="loading-state">
-        <div class="loading-spinner"></div>
-        <p>Загрузка данных...</p>
-      </div>
-    `;
-  
-    try {
-      const statusFilter = document.getElementById('status-filter').value;
-      const userId = tg?.initDataUnsafe?.user?.id;
-      
-      // Формируем URL с параметрами
-      const url = new URL(`${API_BASE_URL}/requests`);
-      const params = new URLSearchParams();
-      
-      if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter);
-      if (userId) params.append('user_id', userId);
-      
-      // Добавляем параметры к URL
-      url.search = params.toString();
-      
-      console.log('Fetching requests from:', url.toString());
-      
-      const response = await fetch(url, {
-        headers: {
-          'Telegram-Init-Data': tg?.initData || ''
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const requests = await response.json();
-      console.log('Received requests:', requests);
-      
-      if (!requests || !requests.length) {
-        container.innerHTML = `
-          <div class="empty-state">
-            <p>Нет заявок по выбранному фильтру</p>
-          </div>
-        `;
-        return;
-      }
-      
-      renderRequests(requests);
-    } catch (error) {
-      console.error('Failed to load requests:', error);
-      container.innerHTML = `
-        <div class="error-state">
-          <p>Ошибка загрузки данных</p>
-          <button onclick="loadRequests()">Повторить</button>
-        </div>
-      `;
+  try {
+    const tg = window.Telegram?.WebApp;
+    const url = new URL(`${API_BASE_URL}/requests`);
+    
+    if (tg?.initDataUnsafe?.user?.id) {
+      url.searchParams.append('user_id', tg.initDataUnsafe.user.id);
     }
+    
+    const response = await fetch(url, {
+      headers: {
+        'Telegram-Init-Data': tg?.initData || ''
+      }
+    });
+    
+    if (!response.ok) throw new Error('Ошибка загрузки');
+    
+    const data = await response.json();
+    appState.requests = data;
+    renderRequests();
+    
+  } catch (error) {
+    console.error('Load requests error:', error);
+    showAlert('Не удалось загрузить заявки');
   }
+}
 
 // Поиск заявок
 async function searchRequests() {
@@ -189,95 +163,92 @@ async function searchRequests() {
 
 // Обновление статуса
 async function updateRequestStatus(event) {
-    const select = event.target;
-    const requestId = select.getAttribute('data-request-id');
-    const newStatus = select.value;
+  const select = event.target;
+  const requestId = select.dataset.requestId;
+  const newStatus = select.value;
+  
+  // Блокируем интерфейс на время запроса
+  select.disabled = true;
+  const originalStatus = select.value;
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/requests/${requestId}/status`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Telegram-Init-Data': window.Telegram?.WebApp?.initData || ''
+      },
+      body: JSON.stringify({ status: newStatus })
+    });
     
-    // Сохраняем предыдущее значение для отката при ошибке
-    const oldStatus = select.value;
+    if (!response.ok) throw new Error('Ошибка обновления');
     
-    // Показываем состояние загрузки
-    select.disabled = true;
-    select.classList.add('loading');
-
-    try {
-        const response = await makeRequest(
-            `${API_BASE_URL}/requests/${requestId}/status`, // Исправленный endpoint
-            'PUT',
-            { status: newStatus }
-        );
-        
-        showAlert('Статус успешно обновлен');
-        console.log('Status updated:', response);
-        
-        // Обновляем статистику после изменения статуса
-        await updateStats();
-        
-    } catch (error) {
-        console.error('Update status error:', error);
-        
-        // Возвращаем предыдущее значение
-        select.value = oldStatus;
-        showAlert(`Ошибка обновления: ${error.message}`);
-        
-    } finally {
-        // Восстанавливаем интерактивность
-        select.disabled = false;
-        select.classList.remove('loading');
-    }
+    // Обновляем локальное состояние
+    const updatedRequest = await response.json();
+    updateLocalRequestState(updatedRequest);
+    
+    // Показываем уведомление
+    showAlert('Статус обновлён!', 2000);
+    
+  } catch (error) {
+    console.error('Update status error:', error);
+    select.value = originalStatus;
+    showAlert('Ошибка обновления статуса');
+  } finally {
+    select.disabled = false;
+  }
 }
 
 // Обновление статистики
 async function updateStats() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/requests/stats`, {
-            headers: {
-                'Content-Type': 'application/json',
-                'Telegram-Init-Data': window.Telegram?.WebApp?.initData || ''
-            }
-        });
+  try {
+    const response = await fetch(`${API_BASE_URL}/requests/stats`, {
+      headers: {
+        'Telegram-Init-Data': window.Telegram?.WebApp?.initData || ''
+      }
+    });
+    
+    if (!response.ok) throw new Error('Ошибка статистики');
+    
+    const stats = await response.json();
+    appState.stats = stats;
+    renderStats();
+    
+  } catch (error) {
+    console.error('Update stats error:', error);
+  }
+}
 
-        if (!response.ok) {
-            throw new Error(`Ошибка сервера: ${response.status}`);
-        }
-
-        const stats = await response.json();
-        
-        // Безопасное обновление счетчиков
-        const updateCounter = (id, value) => {
-            const element = document.getElementById(id);
-            if (element) element.textContent = value ?? 0;
-        };
-
-        updateCounter('new-count', stats.new);
-        updateCounter('progress-count', stats.in_progress);
-        updateCounter('completed-count', stats.completed);
-
-    } catch (error) {
-        console.error('Update stats error:', error);
-        
-        // Устанавливаем нулевые значения при ошибке
-        ['new-count', 'progress-count', 'completed-count'].forEach(id => {
-            const element = document.getElementById(id);
-            if (element) element.textContent = '0';
-        });
-    }
+function updateLocalRequestState(updatedRequest) {
+  appState.requests = appState.requests.map(request => 
+    request.id === updatedRequest.id ? updatedRequest : request
+  );
+  
+  renderRequests();
+  updateStats(); // Обновляем статистику после изменения
 }
 
 // Инициализация приложения
 async function initApp() {
-    try {
-        const isHealthy = await checkAPIHealth();
-        if (!isHealthy) {
-            throw new Error('Сервер недоступен');
-        }
-
-        await Promise.all([loadRequests(), updateStats()]);
-        setupEventListeners();
-    } catch (error) {
-        console.error('Init error:', error);
-        showAlert(`Ошибка инициализации: ${error.message}`);
+  try {
+    await loadRequests();
+    await updateStats();
+    setupEventListeners();
+    
+    // Проверяем, есть ли Telegram WebApp
+    if (window.Telegram?.WebApp) {
+      const tg = window.Telegram.WebApp;
+      tg.expand();
+      tg.enableClosingConfirmation();
+      
+      // Подписываемся на события
+      tg.onEvent('viewportChanged', handleViewportChange);
+      tg.onEvent('themeChanged', updateTheme);
     }
+  } catch (error) {
+    console.error('App init failed:', error);
+    showAlert('Ошибка инициализации приложения');
+  }
 }
 
 // Настройка обработчиков событий
@@ -308,84 +279,43 @@ function setupEventListeners() {
 }
 
 // Рендер заявок
-function renderRequests(requests) {
-    const container = document.getElementById('requests-container');
-    if (!container) {
-        console.error('Container not found');
-        return;
-    }
+function renderRequests() {
+  const container = document.getElementById('requests-container');
+  if (!container) return;
+  
+  container.innerHTML = appState.requests.length ? '' : '<div class="empty">Нет заявок</div>';
+  
+  appState.requests.forEach(request => {
+    const card = document.createElement('div');
+    card.className = 'request-card';
+    card.innerHTML = `
+      <div class="request-header">
+        <h3>${escapeHtml(request.name)}</h3>
+        <span class="status-badge ${request.status}">${getStatusText(request.status)}</span>
+      </div>
+      <div class="request-body">
+        <p><strong>Телефон:</strong> ${formatPhone(request.phone)}</p>
+        ${request.message ? `<p><strong>Сообщение:</strong> ${escapeHtml(request.message)}</p>` : ''}
+        <p class="date">${formatDate(request.created_at)}</p>
+      </div>
+      <div class="request-actions">
+        <select class="status-select" data-request-id="${request.id}">
+          <option value="new" ${request.status === 'new' ? 'selected' : ''}>Новая</option>
+          <option value="in_progress" ${request.status === 'in_progress' ? 'selected' : ''}>В работе</option>
+          <option value="completed" ${request.status === 'completed' ? 'selected' : ''}>Завершена</option>
+        </select>
+      </div>
+    `;
+    
+    card.querySelector('.status-select').addEventListener('change', updateRequestStatus);
+    container.appendChild(card);
+  });
+}
 
-    // Очищаем контейнер
-    container.innerHTML = '';
-
-    if (!requests || requests.length === 0) {
-        container.innerHTML = '<div class="empty-state">Нет заявок для отображения</div>';
-        return;
-    }
-
-    requests.forEach(request => {
-        const card = document.createElement('div');
-        card.className = 'request-card';
-
-        // Форматируем дату
-        const formattedDate = formatDate(request.created_at || new Date().toISOString());
-        
-        // Определяем класс для статуса
-        const statusClass = `status-${request.status || 'new'}`;
-        const statusText = getStatusText(request.status);
-
-        // Создаем HTML для карточки
-        card.innerHTML = `
-            <div class="request-header">
-                <h3 class="request-title">Заявка #${request.id}</h3>
-                <span class="request-status ${statusClass}">${statusText}</span>
-            </div>
-            
-            <div class="request-body">
-                <div class="request-field">
-                    <span class="field-label">Имя:</span>
-                    <span class="field-value">${escapeHtml(request.name || 'Не указано')}</span>
-                </div>
-                
-                <div class="request-field">
-                    <span class="field-label">Телефон:</span>
-                    <span class="field-value">
-                        <a href="tel:${request.phone ? request.phone.replace(/\D/g, '') : ''}">
-                            ${request.phone ? formatPhone(request.phone) : 'Не указан'}
-                        </a>
-                    </span>
-                </div>
-                
-                ${request.message ? `
-                <div class="request-field">
-                    <span class="field-label">Сообщение:</span>
-                    <span class="field-value">${escapeHtml(request.message)}</span>
-                </div>
-                ` : ''}
-                
-                <div class="request-field">
-                    <span class="field-label">Дата создания:</span>
-                    <span class="field-value">${formattedDate}</span>
-                </div>
-            </div>
-            
-            <div class="request-footer">
-                <select class="status-select" data-request-id="${request.id}">
-                    <option value="new" ${request.status === 'new' ? 'selected' : ''}>Новая</option>
-                    <option value="in_progress" ${request.status === 'in_progress' ? 'selected' : ''}>В работе</option>
-                    <option value="completed" ${request.status === 'completed' ? 'selected' : ''}>Завершена</option>
-                </select>
-            </div>
-        `;
-
-        // Добавляем обработчик изменения статуса
-        const select = card.querySelector('.status-select');
-        if (select) {
-            select.addEventListener('change', updateRequestStatus);
-        }
-
-        container.appendChild(card);
-    });
+function renderStats() {
+  document.getElementById('new-count').textContent = appState.stats.new;
+  document.getElementById('progress-count').textContent = appState.stats.in_progress;
+  document.getElementById('completed-count').textContent = appState.stats.completed;
 }
 
 // Вспомогательные функции
