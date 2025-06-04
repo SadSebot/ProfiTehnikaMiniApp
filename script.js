@@ -36,6 +36,11 @@ let appState = {
   }
 };
 
+window.addEventListener('error', (event) => {
+  console.error('Global error:', event.error);
+  showAlert('Произошла непредвиденная ошибка');
+});
+
 // Универсальный метод для запросов
 async function makeRequest(url, method = 'GET', body = null) {
   const headers = {
@@ -73,27 +78,17 @@ async function makeRequest(url, method = 'GET', body = null) {
 
 // Безопасное отображение сообщений
 function showAlert(message, duration = 3000) {
-    // Создаем или находим контейнер для уведомлений
-    let alertContainer = document.getElementById('alert-container');
-    if (!alertContainer) {
-        alertContainer = document.createElement('div');
-        alertContainer.id = 'alert-container';
-        alertContainer.style.position = 'fixed';
-        alertContainer.style.bottom = '20px';
-        alertContainer.style.right = '20px';
-        alertContainer.style.zIndex = '1000';
-        document.body.appendChild(alertContainer);
+  try {
+    if (window.Telegram?.WebApp?.showAlert) {
+      window.Telegram.WebApp.showAlert(message);
+    } else {
+      // Fallback для браузера
+      alert(message);
     }
-
-    const alertEl = document.createElement('div');
-    alertEl.className = 'custom-alert';
-    alertEl.textContent = message;
-    alertContainer.appendChild(alertEl);
-
-    setTimeout(() => {
-        alertEl.classList.add('hide');
-        setTimeout(() => alertEl.remove(), 300);
-    }, duration);
+  } catch (error) {
+    console.error('ShowAlert failed:', error);
+    alert(message); // Резервный вариант
+  }
 }
 
 function showFallbackAlert(message, duration) {
@@ -112,11 +107,22 @@ function showFallbackAlert(message, duration) {
 async function loadRequests() {
   try {
     const tg = window.Telegram?.WebApp;
-    const url = new URL(`${API_BASE_URL}/requests`);
+    let url = `${API_BASE_URL}/requests`;
+    
+    // Добавляем параметры для фильтрации
+    const params = new URLSearchParams();
     
     if (tg?.initDataUnsafe?.user?.id) {
-      url.searchParams.append('user_id', tg.initDataUnsafe.user.id);
+      params.append('user_id', tg.initDataUnsafe.user.id);
     }
+    
+    // Добавляем параметры статуса, если есть фильтр
+    const statusFilter = document.getElementById('status-filter')?.value;
+    if (statusFilter && statusFilter !== 'all') {
+      params.append('status', statusFilter);
+    }
+    
+    url += `?${params.toString()}`;
     
     const response = await fetch(url, {
       headers: {
@@ -124,15 +130,29 @@ async function loadRequests() {
       }
     });
     
-    if (!response.ok) throw new Error('Ошибка загрузки');
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null);
+      throw new Error(errorData?.message || `HTTP error! status: ${response.status}`);
+    }
     
     const data = await response.json();
     appState.requests = data;
     renderRequests();
     
   } catch (error) {
-    console.error('Load requests error:', error);
-    showAlert('Не удалось загрузить заявки');
+    console.error('Load requests failed:', error);
+    showAlert(`Ошибка загрузки: ${error.message}`);
+    
+    // Показываем состояние ошибки
+    const container = document.getElementById('requests-container');
+    if (container) {
+      container.innerHTML = `
+        <div class="error-state">
+          <p>Не удалось загрузить заявки</p>
+          <button onclick="loadRequests()">Повторить</button>
+        </div>
+      `;
+    }
   }
 }
 
@@ -202,21 +222,45 @@ async function updateRequestStatus(event) {
 // Обновление статистики
 async function updateStats() {
   try {
+    const tg = window.Telegram?.WebApp;
     const response = await fetch(`${API_BASE_URL}/requests/stats`, {
       headers: {
-        'Telegram-Init-Data': window.Telegram?.WebApp?.initData || ''
+        'Telegram-Init-Data': tg?.initData || ''
       }
     });
     
-    if (!response.ok) throw new Error('Ошибка статистики');
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     
     const stats = await response.json();
-    appState.stats = stats;
+    
+    // Обновляем глобальное состояние
+    appState.stats = {
+      new: stats.new || 0,
+      in_progress: stats.in_progress || 0,
+      completed: stats.completed || 0
+    };
+    
+    // Рендерим обновлённую статистику
     renderStats();
     
   } catch (error) {
-    console.error('Update stats error:', error);
+    console.error('Update stats failed:', error);
+    // Устанавливаем нулевые значения при ошибке
+    appState.stats = { new: 0, in_progress: 0, completed: 0 };
+    renderStats();
   }
+}
+
+function renderStats() {
+  // Безопасное обновление DOM
+  const safeUpdate = (id, value) => {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value;
+  };
+  
+  safeUpdate('new-count', appState.stats.new);
+  safeUpdate('progress-count', appState.stats.in_progress);
+  safeUpdate('completed-count', appState.stats.completed);
 }
 
 function updateLocalRequestState(updatedRequest) {
@@ -231,25 +275,34 @@ function updateLocalRequestState(updatedRequest) {
 // Инициализация приложения
 async function initApp() {
   try {
-    await loadRequests();
-    await updateStats();
-    setupEventListeners();
-    
-    // Проверяем, есть ли Telegram WebApp
+    // Инициализация Telegram WebApp
     if (window.Telegram?.WebApp) {
       const tg = window.Telegram.WebApp;
+      tg.ready();
       tg.expand();
       tg.enableClosingConfirmation();
       
-      // Подписываемся на события
-      tg.onEvent('viewportChanged', handleViewportChange);
-      tg.onEvent('themeChanged', updateTheme);
+      // Обновляем тему
+      document.documentElement.classList.add(tg.colorScheme);
     }
+    
+    // Первоначальная загрузка
+    await Promise.all([loadRequests(), updateStats()]);
+    
+    // Настройка интервала обновления
+    setInterval(async () => {
+      await loadRequests();
+      await updateStats();
+    }, 30000); // Каждые 30 секунд
+    
   } catch (error) {
-    console.error('App init failed:', error);
+    console.error('App initialization failed:', error);
     showAlert('Ошибка инициализации приложения');
   }
 }
+
+// Запуск приложения
+document.addEventListener('DOMContentLoaded', initApp);
 
 // Настройка обработчиков событий
 function setupEventListeners() {
@@ -283,9 +336,18 @@ function renderRequests() {
   const container = document.getElementById('requests-container');
   if (!container) return;
   
-  container.innerHTML = appState.requests.length ? '' : '<div class="empty">Нет заявок</div>';
+  // Получаем текущий фильтр
+  const statusFilter = document.getElementById('status-filter')?.value;
   
-  appState.requests.forEach(request => {
+  // Фильтруем заявки
+  const filteredRequests = statusFilter && statusFilter !== 'all'
+    ? appState.requests.filter(req => req.status === statusFilter)
+    : appState.requests;
+  
+  // Рендерим
+  container.innerHTML = filteredRequests.length ? '' : '<div class="empty">Нет заявок</div>';
+  
+  filteredRequests.forEach(request => {
     const card = document.createElement('div');
     card.className = 'request-card';
     card.innerHTML = `
@@ -305,9 +367,8 @@ function renderRequests() {
           <option value="completed" ${request.status === 'completed' ? 'selected' : ''}>Завершена</option>
         </select>
       </div>
+      <div class="request-status ${request.status}">${getStatusText(request.status)}</div>
     `;
-    
-    card.querySelector('.status-select').addEventListener('change', updateRequestStatus);
     container.appendChild(card);
   });
 }
