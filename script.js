@@ -120,6 +120,7 @@ async function loadRequests() {
     const tg = window.Telegram?.WebApp;
     const url = new URL(`${API_BASE_URL}/requests`);
     
+    // Параметры запроса
     if (tg?.initDataUnsafe?.id) {
       url.searchParams.append('id', tg.initDataUnsafe.id);
     }
@@ -128,37 +129,37 @@ async function loadRequests() {
     if (statusFilter && statusFilter !== 'all') {
       url.searchParams.append('status', statusFilter);
     }
+
+    // Убираем Cache-Control из заголовков
+    const headers = {
+      'Content-Type': 'application/json'
+    };
     
-    console.log('Fetching from:', url.toString());
-    
-    const response = await fetch(url.toString(), {
-      headers: {
-        'Telegram-Init-Data': tg?.initData || '',
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `HTTP error ${response.status}`);
+    if (tg?.initData) {
+      headers['Telegram-Init-Data'] = tg.initData;
     }
-    
+
+    const response = await fetch(url, {
+      headers,
+      cache: 'no-store' // Альтернатива Cache-Control
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
     const data = await response.json();
     appState.requests = data;
     renderRequests();
     
   } catch (error) {
     console.error('Load requests failed:', error);
-    showErrorState(`Ошибка загрузки: ${error.message}`);
-    showFallbackAlert('Не удалось загрузить заявки. Попробуйте позже.', 3000);
+    showErrorState('Ошибка загрузки данных');
     
-    // Для диагностики в режиме разработки
+    // Fallback для разработки
     if (IS_DEVELOPMENT) {
-      console.debug('Error details:', {
-        error: error.toString(),
-        stack: error.stack,
-        time: new Date().toISOString()
-      });
+      appState.requests = getMockRequests();
+      renderRequests();
     }
   }
 }
