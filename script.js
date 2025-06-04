@@ -447,7 +447,7 @@ function renderRequests() {
   if (filteredRequests.length === 0) {
     container.innerHTML = `
       <div class="empty-state">
-        <img src="images/no-requests.svg"  class="empty-image">
+        <img src="images/no-requests.svg" class="empty-image">
         <p class="empty-text">Заявки не найдены</p>
         ${statusFilter && statusFilter !== 'all' 
           ? `<button class="reset-filter" onclick="document.getElementById('status-filter').value='all';loadRequests()">
