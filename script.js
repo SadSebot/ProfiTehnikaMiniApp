@@ -120,8 +120,8 @@ async function loadRequests() {
     const tg = window.Telegram?.WebApp;
     const url = new URL(`${API_BASE_URL}/requests`);
     
-    if (tg?.initDataUnsafe?.user?.id) {
-      url.searchParams.append('user_id', tg.initDataUnsafe.user.id);
+    if (tg?.initDataUnsafe?.id) {
+      url.searchParams.append('id', tg.initDataUnsafe.id);
     }
     
     const statusFilter = document.getElementById('status-filter')?.value;
@@ -176,8 +176,8 @@ async function searchRequests() {
     try {
         const params = new URLSearchParams({ query: searchQuery });
         
-        if (IS_TELEGRAM_WEBAPP && tg.initDataUnsafe?.user?.id) {
-            params.append('id', tg.initDataUnsafe.user.id);
+        if (IS_TELEGRAM_WEBAPP && tg.initDataUnsafe?.id) {
+            params.append('id', tg.initDataUnsafe.id);
         }
 
         const requests = await makeRequest(`${API_BASE_URL}/requests/search?${params.toString()}`);
