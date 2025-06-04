@@ -1,8 +1,10 @@
 const tg = window.Telegram?.WebApp;
 if (tg) {
-  tg.expand(); // Раскрываем на весь экран
-  tg.enableClosingConfirmation(); // Подтверждение закрытия
-  console.log('Telegram WebApp initialized:', tg.initDataUnsafe);
+  const tg = window.Telegram.WebApp;
+  tg.ready(); // Явно указываем, что приложение готово
+  tg.expand();
+  tg.enableClosingConfirmation();
+  console.log('WebApp initialized:', tg.initDataUnsafe);
 } else {
   console.warn('Telegram WebApp not detected, running in browser mode');
 }
@@ -27,14 +29,13 @@ async function checkAPIHealth() {
 
 // Универсальный метод для запросов
 async function makeRequest(url, method = 'GET', body = null) {
-    const headers = {
-        'Content-Type': 'application/json',
-    };
-    
-    // Добавляем Telegram Init Data если доступен
-    if (IS_TELEGRAM_WEBAPP && window.Telegram?.WebApp?.initData) {
-        headers['Telegram-Init-Data'] = window.Telegram.WebApp.initData;
-    }
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+  
+  if (window.Telegram?.WebApp?.initData) {
+    headers['Telegram-Init-Data'] = window.Telegram.WebApp.initData;
+  }
 
     const config = {
         method,
@@ -434,4 +435,26 @@ function getStatusText(status) {
 }
 
 // Запуск приложения
-document.addEventListener('DOMContentLoaded', initApp);
+ocument.addEventListener('DOMContentLoaded', () => {
+  if (window.Telegram?.WebApp) {
+    const tg = window.Telegram.WebApp;
+    
+    // Инициализация
+    tg.expand();
+    tg.enableClosingConfirmation();
+    tg.ready();
+    
+    // Параметры запуска
+    console.log('Launch params:', tg.initDataUnsafe);
+    
+    // Цветовая схема
+    document.documentElement.style.setProperty('--tg-color-scheme', tg.colorScheme);
+    document.documentElement.style.setProperty('--tg-bg-color', tg.backgroundColor);
+    
+    // Загрузка данных
+    loadRequests();
+  } else {
+    console.warn('Running in browser mode');
+    loadRequests();
+  }
+});
