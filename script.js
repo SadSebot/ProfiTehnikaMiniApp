@@ -79,50 +79,49 @@ async function makeRequest(url, method = 'GET', body = null) {
 // Безопасное отображение сообщений
 function showAlert(message, duration = 3000) {
   try {
+    // Пытаемся использовать Telegram WebApp alert
     if (window.Telegram?.WebApp?.showAlert) {
-      window.Telegram.WebApp.showAlert(message);
+      window.Telegram.WebApp.showAlert(message)
+        .catch(() => showFallbackAlert(message, duration));
     } else {
       // Fallback для браузера
-      alert(message);
+      showFallbackAlert(message, duration);
     }
-  } catch (error) {
-    console.error('ShowAlert failed:', error);
-    alert(message); // Резервный вариант
+  } catch (e) {
+    console.error('Show alert error:', e);
+    showFallbackAlert(message, duration);
   }
 }
 
 function showFallbackAlert(message, duration) {
-    const alertEl = document.createElement('div');
-    alertEl.className = 'custom-alert';
-    alertEl.textContent = message;
-    document.body.appendChild(alertEl);
+  const alertEl = document.createElement('div');
+  alertEl.className = 'custom-alert';
+  alertEl.textContent = message;
+  document.body.appendChild(alertEl);
 
-    setTimeout(() => {
-        alertEl.classList.add('hide');
-        setTimeout(() => alertEl.remove(), 300);
-    }, duration);
+  setTimeout(() => {
+    alertEl.remove();
+  }, duration);
 }
 
 // Загрузка заявок
 async function loadRequests() {
   try {
     const tg = window.Telegram?.WebApp;
-    let url = `${API_BASE_URL}/requests`;
+    const url = new URL(`${API_BASE_URL}/requests`);
     
-    // Добавляем параметры для фильтрации
-    const params = new URLSearchParams();
-    
+    // Добавляем параметры
     if (tg?.initDataUnsafe?.user?.id) {
-      params.append('user_id', tg.initDataUnsafe.user.id);
+      url.searchParams.append('user_id', tg.initDataUnsafe.user.id);
     }
     
-    // Добавляем параметры статуса, если есть фильтр
+    // Добавляем фильтр статуса
     const statusFilter = document.getElementById('status-filter')?.value;
     if (statusFilter && statusFilter !== 'all') {
-      params.append('status', statusFilter);
+      url.searchParams.append('status', statusFilter);
     }
     
-    url += `?${params.toString()}`;
+    console.log('Fetching from:', url.toString()); // Для отладки
     
     const response = await fetch(url, {
       headers: {
@@ -131,8 +130,8 @@ async function loadRequests() {
     });
     
     if (!response.ok) {
-      const errorData = await response.json().catch(() => null);
-      throw new Error(errorData?.message || `HTTP error! status: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`Server error: ${response.status} - ${errorText}`);
     }
     
     const data = await response.json();
@@ -141,15 +140,22 @@ async function loadRequests() {
     
   } catch (error) {
     console.error('Load requests failed:', error);
-    showAlert(`Ошибка загрузки: ${error.message}`);
+    
+    // Показываем понятное сообщение об ошибке
+    let errorMessage = 'Ошибка загрузки данных';
+    if (error.message.includes('500')) {
+      errorMessage = 'Проблема на сервере, попробуйте позже';
+    }
+    
+    showAlert(errorMessage);
     
     // Показываем состояние ошибки
     const container = document.getElementById('requests-container');
     if (container) {
       container.innerHTML = `
         <div class="error-state">
-          <p>Не удалось загрузить заявки</p>
-          <button onclick="loadRequests()">Повторить</button>
+          <p>${errorMessage}</p>
+          <button onclick="loadRequests()">Повторить попытку</button>
         </div>
       `;
     }
