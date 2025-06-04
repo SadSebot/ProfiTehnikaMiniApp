@@ -194,10 +194,9 @@ async function updateRequestStatus(event) {
   const requestId = select.dataset.requestId;
   const newStatus = select.value;
   
-  // Блокируем интерфейс на время запроса
   select.disabled = true;
-  const originalStatus = select.value;
-  
+  const originalStatus = select.dataset.originalStatus || select.value;
+
   try {
     const response = await fetch(`${API_BASE_URL}/requests/${requestId}/status`, {
       method: 'PUT',
@@ -212,15 +211,22 @@ async function updateRequestStatus(event) {
     
     // Обновляем локальное состояние
     const updatedRequest = await response.json();
-    updateLocalRequestState(updatedRequest);
     
-    // Показываем уведомление
-    showAlert('Статус обновлён!', 2000);
+    // Обновляем данные в appState
+    appState.requests = appState.requests.map(req => 
+      req.id === updatedRequest.id ? updatedRequest : req
+    );
+    
+    // Принудительно обновляем UI
+    renderRequests();
+    updateStats();
+    
+    showAlert('Статус успешно изменён!', 2000);
     
   } catch (error) {
-    console.error('Update status error:', error);
+    console.error('Update error:', error);
     select.value = originalStatus;
-    showAlert('Ошибка обновления статуса');
+    showAlert('Не удалось изменить статус');
   } finally {
     select.disabled = false;
   }
@@ -315,71 +321,182 @@ document.addEventListener('DOMContentLoaded', initApp);
 
 // Настройка обработчиков событий
 function setupEventListeners() {
-    const addSafeListener = (id, event, handler) => {
-        const element = document.getElementById(id);
-        if (element) {
-            element.addEventListener(event, async () => {
-                try {
-                    await handler();
-                } catch (error) {
-                    showAlert(`Ошибка: ${error.message}`);
-                }
-            });
+    // Универсальная функция для безопасного добавления обработчиков
+    const addSafeListener = (elementOrId, event, handler) => {
+        const element = typeof elementOrId === 'string' 
+            ? document.getElementById(elementOrId) 
+            : elementOrId;
+        
+        if (!element) {
+            console.warn(`Element not found:`, elementOrId);
+            return;
         }
+
+        const wrappedHandler = async (e) => {
+            try {
+                // Добавляем индикатор загрузки для кнопок
+                if (element.tagName === 'BUTTON') {
+                    const originalText = element.innerHTML;
+                    element.innerHTML = 'Загрузка...';
+                    element.disabled = true;
+                    
+                    await handler(e);
+                    
+                    element.innerHTML = originalText;
+                    element.disabled = false;
+                } else {
+                    await handler(e);
+                }
+            } catch (error) {
+                console.error(`Error in ${event} handler:`, error);
+                showAlert(`Ошибка: ${error.message}`);
+                
+                // Восстанавливаем кнопку в случае ошибки
+                if (element.tagName === 'BUTTON' && originalText) {
+                    element.innerHTML = originalText;
+                    element.disabled = false;
+                }
+            }
+        };
+
+        element.addEventListener(event, wrappedHandler);
+        return () => element.removeEventListener(event, wrappedHandler);
     };
 
+    // Основные обработчики
     addSafeListener('refresh-btn', 'click', loadRequests);
     addSafeListener('search-btn', 'click', searchRequests);
-    addSafeListener('status-filter', 'change', loadRequests);
+    
+    // Обработчик фильтра с дебаунсом
+    let filterTimeout;
+    addSafeListener('status-filter', 'change', (e) => {
+        clearTimeout(filterTimeout);
+        filterTimeout = setTimeout(() => {
+            loadRequests();
+            updateStats();
+        }, 300); // Задержка 300мс перед обновлением
+    });
 
+    // Поиск по Enter с дебаунсом
+    let searchTimeout;
     const searchInput = document.getElementById('search-input');
     if (searchInput) {
-        searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') searchRequests();
+        addSafeListener(searchInput, 'input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                if (e.target.value.trim().length >= 2 || e.target.value.trim() === '') {
+                    searchRequests();
+                }
+            }, 500);
+        });
+
+        addSafeListener(searchInput, 'keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchRequests();
+            }
         });
     }
+
+    // Делегирование событий для динамических элементов
+    document.addEventListener('change', (e) => {
+        if (e.target.classList.contains('status-select')) {
+            updateRequestStatus(e);
+        }
+    });
 }
 
 // Рендер заявок
 function renderRequests() {
   const container = document.getElementById('requests-container');
-  if (!container) return;
-  
+  if (!container) {
+    console.error('Container #requests-container not found');
+    return;
+  }
+
   // Получаем текущий фильтр
   const statusFilter = document.getElementById('status-filter')?.value;
   
-  // Фильтруем заявки
-  const filteredRequests = statusFilter && statusFilter !== 'all'
-    ? appState.requests.filter(req => req.status === statusFilter)
-    : appState.requests;
-  
-  // Рендерим
-  container.innerHTML = filteredRequests.length ? '' : '<div class="empty">Нет заявок</div>';
-  
+  // Фильтруем заявки с проверкой данных
+  const filteredRequests = (statusFilter && statusFilter !== 'all')
+    ? (appState.requests || []).filter(req => req && req.status === statusFilter)
+    : (appState.requests || []);
+
+  // Очищаем контейнер
+  container.innerHTML = '';
+
+  // Сообщение если нет заявок
+  if (filteredRequests.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <img src="images/no-requests.svg" alt="Нет заявок" class="empty-image">
+        <p class="empty-text">Заявки не найдены</p>
+        ${statusFilter && statusFilter !== 'all' 
+          ? `<button class="reset-filter" onclick="document.getElementById('status-filter').value='all';loadRequests()">
+               Сбросить фильтр
+             </button>` 
+          : ''}
+      </div>
+    `;
+    return;
+  }
+
+  // Рендерим заявки
   filteredRequests.forEach(request => {
+    if (!request || !request.id) {
+      console.warn('Invalid request data:', request);
+      return;
+    }
+
     const card = document.createElement('div');
-    card.className = 'request-card';
+    card.className = `request-card ${request.status}`;
+    card.dataset.requestId = request.id;
+    
     card.innerHTML = `
       <div class="request-header">
-        <h3>${escapeHtml(request.name)}</h3>
-        <span class="status-badge ${request.status}">${getStatusText(request.status)}</span>
+        <h3 class="request-title">${escapeHtml(request.name || 'Без названия')}</h3>
+        <span class="status-badge ${request.status}">
+          ${getStatusText(request.status)}
+        </span>
       </div>
+      
       <div class="request-body">
-        <p><strong>Телефон:</strong> ${formatPhone(request.phone)}</p>
-        ${request.message ? `<p><strong>Сообщение:</strong> ${escapeHtml(request.message)}</p>` : ''}
-        <p class="date">${formatDate(request.created_at)}</p>
+        <p class="request-field">
+          <strong>Телефон:</strong> 
+          <a href="tel:${request.phone ? request.phone.replace(/[^\d+]/g, '') : ''}" class="phone-link">
+            ${formatPhone(request.phone)}
+          </a>
+        </p>
+        
+        ${request.message ? `
+          <p class="request-field">
+            <strong>Сообщение:</strong> 
+            <span class="request-message">${escapeHtml(request.message)}</span>
+          </p>` 
+        : ''}
+        
+        <p class="request-date">
+          <i class="icon-calendar"></i>
+          ${formatDate(request.created_at)}
+        </p>
       </div>
+      
       <div class="request-actions">
-        <select class="status-select" data-request-id="${request.id}">
+        <select class="status-select" 
+                data-request-id="${request.id}"
+                data-original-status="${request.status}"
+                onchange="updateRequestStatus(event)">
           <option value="new" ${request.status === 'new' ? 'selected' : ''}>Новая</option>
           <option value="in_progress" ${request.status === 'in_progress' ? 'selected' : ''}>В работе</option>
           <option value="completed" ${request.status === 'completed' ? 'selected' : ''}>Завершена</option>
         </select>
       </div>
-      <div class="request-status ${request.status}">${getStatusText(request.status)}</div>
     `;
+
     container.appendChild(card);
   });
+
+  // Обновляем статистику после рендеринга
+  updateStats();
 }
 
 function renderStats() {
