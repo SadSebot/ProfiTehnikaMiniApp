@@ -309,24 +309,75 @@ function setupEventListeners() {
 // Рендер заявок
 function renderRequests(requests) {
     const container = document.getElementById('requests-container');
-    if (!container) return;
+    if (!container) {
+        console.error('Container not found');
+        return;
+    }
 
-    container.innerHTML = requests.length ? '' : '<div class="empty">Нет заявок</div>';
+    // Очищаем контейнер
+    container.innerHTML = '';
+
+    if (!requests || requests.length === 0) {
+        container.innerHTML = '<div class="empty-state">Нет заявок для отображения</div>';
+        return;
+    }
 
     requests.forEach(request => {
         const card = document.createElement('div');
         card.className = 'request-card';
+
+        // Форматируем дату
+        const formattedDate = formatDate(request.created_at || new Date().toISOString());
         
+        // Определяем класс для статуса
+        const statusClass = `status-${request.status || 'new'}`;
+        const statusText = getStatusText(request.status);
+
+        // Создаем HTML для карточки
         card.innerHTML = `
-            <!-- Остальное содержимое карточки -->
-            <select class="status-select" data-request-id="${request.id}"
-                    ${request.status === 'completed' ? 'disabled' : ''}>
-                <option value="new" ${request.status === 'new' ? 'selected' : ''}>Новая</option>
-                <option value="in_progress" ${request.status === 'in_progress' ? 'selected' : ''}>В работе</option>
-                <option value="completed" ${request.status === 'completed' ? 'selected' : ''}>Завершена</option>
-            </select>
+            <div class="request-header">
+                <h3 class="request-title">Заявка #${request.id}</h3>
+                <span class="request-status ${statusClass}">${statusText}</span>
+            </div>
+            
+            <div class="request-body">
+                <div class="request-field">
+                    <span class="field-label">Имя:</span>
+                    <span class="field-value">${escapeHtml(request.name || 'Не указано')}</span>
+                </div>
+                
+                <div class="request-field">
+                    <span class="field-label">Телефон:</span>
+                    <span class="field-value">
+                        <a href="tel:${request.phone ? request.phone.replace(/\D/g, '') : ''}">
+                            ${request.phone ? formatPhone(request.phone) : 'Не указан'}
+                        </a>
+                    </span>
+                </div>
+                
+                ${request.message ? `
+                <div class="request-field">
+                    <span class="field-label">Сообщение:</span>
+                    <span class="field-value">${escapeHtml(request.message)}</span>
+                </div>
+                ` : ''}
+                
+                <div class="request-field">
+                    <span class="field-label">Дата создания:</span>
+                    <span class="field-value">${formattedDate}</span>
+                </div>
+            </div>
+            
+            <div class="request-footer">
+                <select class="status-select" data-request-id="${request.id}">
+                    <option value="new" ${request.status === 'new' ? 'selected' : ''}>Новая</option>
+                    <option value="in_progress" ${request.status === 'in_progress' ? 'selected' : ''}>В работе</option>
+                    <option value="completed" ${request.status === 'completed' ? 'selected' : ''}>Завершена</option>
+                </select>
+            </div>
         `;
 
+        // Добавляем обработчик изменения статуса
         const select = card.querySelector('.status-select');
         if (select) {
             select.addEventListener('change', updateRequestStatus);
