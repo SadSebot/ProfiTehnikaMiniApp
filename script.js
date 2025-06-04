@@ -127,8 +127,8 @@ async function loadRequests() {
         const url = new URL(`${API_BASE_URL}/requests`);
         
         // Параметры запроса
-        if (tg?.initDataUnsafe?.user?.id) {
-            url.searchParams.append('id', tg.initDataUnsafe.user.id);
+        if (tg?.initDataUnsafe?.id) {
+            url.searchParams.append('id', tg.initDataUnsafe.id);
         }
         
         const statusFilter = document.getElementById('status-filter')?.value;
