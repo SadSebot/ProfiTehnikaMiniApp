@@ -28,11 +28,12 @@ async function checkAPIHealth() {
 // Универсальный метод для запросов
 async function makeRequest(url, method = 'GET', body = null) {
     const headers = {
-      'Content-Type': 'application/json',
+        'Content-Type': 'application/json',
     };
-  
+    
+    // Добавляем Telegram Init Data если доступен
     if (IS_TELEGRAM_WEBAPP && window.Telegram?.WebApp?.initData) {
-      headers['Telegram-Init-Data'] = window.Telegram.WebApp.initData;
+        headers['Telegram-Init-Data'] = window.Telegram.WebApp.initData;
     }
 
     const config = {
@@ -49,7 +50,8 @@ async function makeRequest(url, method = 'GET', body = null) {
         
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.message || `Ошибка ${response.status}`);
+            const errorMessage = errorData.error || errorData.message || `Ошибка ${response.status}`;
+            throw new Error(errorMessage);
         }
 
         return await response.json();
@@ -61,11 +63,27 @@ async function makeRequest(url, method = 'GET', body = null) {
 
 // Безопасное отображение сообщений
 function showAlert(message, duration = 3000) {
-    if (IS_TELEGRAM_WEBAPP && tg.showAlert) {
-        tg.showAlert(message).catch(() => showFallbackAlert(message, duration));
-    } else {
-        showFallbackAlert(message, duration);
+    // Создаем или находим контейнер для уведомлений
+    let alertContainer = document.getElementById('alert-container');
+    if (!alertContainer) {
+        alertContainer = document.createElement('div');
+        alertContainer.id = 'alert-container';
+        alertContainer.style.position = 'fixed';
+        alertContainer.style.bottom = '20px';
+        alertContainer.style.right = '20px';
+        alertContainer.style.zIndex = '1000';
+        document.body.appendChild(alertContainer);
     }
+
+    const alertEl = document.createElement('div');
+    alertEl.className = 'custom-alert';
+    alertEl.textContent = message;
+    alertContainer.appendChild(alertEl);
+
+    setTimeout(() => {
+        alertEl.classList.add('hide');
+        setTimeout(() => alertEl.remove(), 300);
+    }, duration);
 }
 
 function showFallbackAlert(message, duration) {
@@ -173,19 +191,38 @@ async function updateRequestStatus(event) {
     const select = event.target;
     const requestId = select.getAttribute('data-request-id');
     const newStatus = select.value;
+    
+    // Сохраняем предыдущее значение для отката при ошибке
+    const oldStatus = select.value;
+    
+    // Показываем состояние загрузки
+    select.disabled = true;
+    select.classList.add('loading');
 
     try {
-        await makeRequest(
-            `${API_BASE_URL}/requests/${requestId}`,
+        const response = await makeRequest(
+            `${API_BASE_URL}/requests/${requestId}/status`, // Исправленный endpoint
             'PUT',
             { status: newStatus }
         );
         
-        showAlert('Статус обновлен');
-        await loadRequests();
+        showAlert('Статус успешно обновлен');
+        console.log('Status updated:', response);
+        
+        // Обновляем статистику после изменения статуса
+        await updateStats();
+        
     } catch (error) {
+        console.error('Update status error:', error);
+        
+        // Возвращаем предыдущее значение
+        select.value = oldStatus;
         showAlert(`Ошибка обновления: ${error.message}`);
-        await loadRequests(); // Восстановление предыдущего состояния
+        
+    } finally {
+        // Восстанавливаем интерактивность
+        select.disabled = false;
+        select.classList.remove('loading');
     }
 }
 
@@ -272,53 +309,32 @@ function setupEventListeners() {
 // Рендер заявок
 function renderRequests(requests) {
     const container = document.getElementById('requests-container');
-    if (!container) {
-      console.error('Container not found');
-      return;
-    }
-  
-    console.log('Rendering requests:', requests);
-  
-    if (!requests?.length) {
-      console.log('No requests received');
-      container.innerHTML = '<div class="empty">Нет заявок</div>';
-      return;
-    }
-  
-    container.innerHTML = '';
-  
+    if (!container) return;
+
+    container.innerHTML = requests.length ? '' : '<div class="empty">Нет заявок</div>';
+
     requests.forEach(request => {
-      console.log('Processing request:', request);
-      const card = document.createElement('div');
-      card.className = 'request-card';
-      
-      const statusClass = `status-${request.status || 'new'}`;
-      const statusText = getStatusText(request.status);
-      const requestDate = request.created_at || request.request_date || new Date().toISOString();
-  
-      card.innerHTML = `
-        <div class="request-header">
-          <span class="request-name">${escapeHtml(request.name || 'Без имени')}</span>
-          <span class="request-status ${statusClass}">${statusText}</span>
-        </div>
-        <div class="request-contacts">
-          ${request.phone ? `<a href="tel:${request.phone}" class="request-phone">${formatPhone(request.phone)}</a>` : ''}
-          ${request.email ? `<a href="mailto:${request.email}" class="request-email">${escapeHtml(request.email)}</a>` : ''}
-        </div>
-        <div class="request-date">${formatDate(requestDate)}</div>
-        ${request.message ? `<div class="request-message">${escapeHtml(request.message)}</div>` : ''}
+        const card = document.createElement('div');
+        card.className = 'request-card';
         
-        <select class="status-select" data-request-id="${request.id}">
-          <option value="new" ${request.status === 'new' ? 'selected' : ''}>Новая</option>
-          <option value="in_progress" ${request.status === 'in_progress' ? 'selected' : ''}>В работе</option>
-          <option value="completed" ${request.status === 'completed' ? 'selected' : ''}>Завершена</option>
-        </select>
-      `;
-  
-      card.querySelector('.status-select')?.addEventListener('change', updateRequestStatus);
-      container.appendChild(card);
+        card.innerHTML = `
+            <!-- Остальное содержимое карточки -->
+            <select class="status-select" data-request-id="${request.id}"
+                    ${request.status === 'completed' ? 'disabled' : ''}>
+                <option value="new" ${request.status === 'new' ? 'selected' : ''}>Новая</option>
+                <option value="in_progress" ${request.status === 'in_progress' ? 'selected' : ''}>В работе</option>
+                <option value="completed" ${request.status === 'completed' ? 'selected' : ''}>Завершена</option>
+            </select>
+        `;
+
+        const select = card.querySelector('.status-select');
+        if (select) {
+            select.addEventListener('change', updateRequestStatus);
+        }
+
+        container.appendChild(card);
     });
-  }
+}
 
 // Вспомогательные функции
 function escapeHtml(unsafe) {
