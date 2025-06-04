@@ -117,52 +117,54 @@ function showFallbackAlert(message, duration) {
 // Загрузка заявок
 async function loadRequests() {
     const refreshBtn = document.getElementById('refresh-btn');
-    try {
-        // Показываем состояние загрузки
-        if (refreshBtn) {
+  try {
+    if (refreshBtn) {
             refreshBtn.disabled = true;
         }
-
-        const tg = window.Telegram?.WebApp;
-        const url = new URL(`${API_BASE_URL}/requests`);
-        
-        // Параметры запроса
-        if (tg?.initDataUnsafe?.id) {
-            url.searchParams.append('id', tg.initDataUnsafe.id);
-        }
-        
-        const statusFilter = document.getElementById('status-filter')?.value;
-        if (statusFilter && statusFilter !== 'all') {
-            url.searchParams.append('status', statusFilter);
-        }
-
-        // Добавляем timestamp для предотвращения кеширования
-        url.searchParams.append('_t', Date.now());
-
-        const response = await fetch(url, {
-            headers: {
-                'Telegram-Init-Data': tg?.initData || '',
-                'Cache-Control': 'no-cache'
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-        appState.requests = data;
-        renderRequests();
-
-    } catch (error) {
-        console.error('Load requests failed:', error);
-        showErrorState('Ошибка загрузки данных');
-        throw error;
-    } finally {
-        if (refreshBtn) {
-            refreshBtn.disabled = false;
-        }
+    const tg = window.Telegram?.WebApp;
+    const url = new URL(`${API_BASE_URL}/requests`);
+    
+    if (tg?.initDataUnsafe?.id) {
+      url.searchParams.append('id', tg.initDataUnsafe.id);
     }
+    
+    const statusFilter = document.getElementById('status-filter')?.value;
+    if (statusFilter && statusFilter !== 'all') {
+      url.searchParams.append('status', statusFilter);
+    }
+    
+    console.log('Fetching from:', url.toString());
+    
+    const response = await fetch(url.toString(), {
+      headers: {
+        'Telegram-Init-Data': tg?.initData || '',
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `HTTP error ${response.status}`);
+    }
+    
+    const data = await response.json();
+    appState.requests = data;
+    renderRequests();
+    
+  } catch (error) {
+    console.error('Load requests failed:', error);
+    showErrorState(`Ошибка загрузки: ${error.message}`);
+    showFallbackAlert('Не удалось загрузить заявки. Попробуйте позже.', 3000);
+    
+    // Для диагностики в режиме разработки
+    if (IS_DEVELOPMENT) {
+      console.debug('Error details:', {
+        error: error.toString(),
+        stack: error.stack,
+        time: new Date().toISOString()
+      });
+    }
+  }
 }
 
 // Поиск заявок
