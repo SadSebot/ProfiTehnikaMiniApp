@@ -128,7 +128,7 @@ async function loadRequests() {
         
         // Параметры запроса
         if (tg?.initDataUnsafe?.user?.id) {
-            url.searchParams.append('user_id', tg.initDataUnsafe.user.id);
+            url.searchParams.append('id', tg.initDataUnsafe.user.id);
         }
         
         const statusFilter = document.getElementById('status-filter')?.value;
