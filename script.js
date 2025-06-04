@@ -123,16 +123,24 @@ async function loadRequests() {
     
     console.log('Fetching from:', url.toString());
     
+    // Добавляем таймаут для запроса
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 секунд таймаут
+    
     const response = await fetch(url, {
       headers: {
         'Telegram-Init-Data': tg?.initData || '',
         'Content-Type': 'application/json'
-      }
+      },
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
-      throw new Error(errorData?.error || `HTTP error ${response.status}`);
+      const errorMessage = errorData?.error || errorData?.message || `HTTP error ${response.status}`;
+      throw new Error(errorMessage);
     }
     
     const data = await response.json();
@@ -141,21 +149,29 @@ async function loadRequests() {
     
   } catch (error) {
     console.error('Load requests failed:', error);
-    showErrorState(`Ошибка загрузки: ${error.message}`);
-    showAlert('Не удалось загрузить заявки. Попробуйте позже.');
+    
+    // Более детальное отображение ошибки
+    let errorMessage = 'Не удалось загрузить заявки';
+    if (error.name === 'AbortError') {
+      errorMessage = 'Превышено время ожидания сервера';
+    } else if (error.message.includes('Database operation failed')) {
+      errorMessage = 'Ошибка подключения к базе данных';
+    } else {
+      errorMessage = error.message || errorMessage;
+    }
+    
+    showErrorState(`Ошибка: ${errorMessage}`);
+    showAlert(`${errorMessage}. Попробуйте позже.`);
+    
+    // Логируем дополнительную информацию для диагностики
+    if (IS_DEVELOPMENT) {
+      console.log('Additional error info:', {
+        errorName: error.name,
+        errorStack: error.stack,
+        timestamp: new Date().toISOString()
+      });
+    }
   }
-}
-
-function showErrorState(message) {
-  const container = document.getElementById('requests-container');
-  if (!container) return;
-  
-  container.innerHTML = `
-    <div class="error-state">
-      <p>${message}</p>
-      <button onclick="loadRequests()" class="retry-btn">Повторить попытку</button>
-    </div>
-  `;
 }
 
 // Поиск заявок
