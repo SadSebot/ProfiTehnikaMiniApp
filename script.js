@@ -435,7 +435,7 @@ function getStatusText(status) {
 }
 
 // Запуск приложения
-ocument.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', () => {
   if (window.Telegram?.WebApp) {
     const tg = window.Telegram.WebApp;
     
