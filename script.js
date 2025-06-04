@@ -76,13 +76,23 @@ async function makeRequest(url, method = 'GET', body = null) {
     }
 }
 
+function showErrorState(message) {
+  const container = document.getElementById('requests-container');
+  if (!container) return;
+  
+  container.innerHTML = `
+    <div class="error-state">
+      <p>${message}</p>
+      <button onclick="loadRequests()" class="retry-btn">Повторить попытку</button>
+    </div>
+  `;
+}
 // Безопасное отображение сообщений
 function showAlert(message, duration = 3000) {
   try {
     // Пытаемся использовать Telegram WebApp alert
     if (window.Telegram?.WebApp?.showAlert) {
-      window.Telegram.WebApp.showAlert(message)
-        .catch(() => showFallbackAlert(message, duration));
+      window.Telegram.WebApp.showAlert(message);
     } else {
       // Fallback для браузера
       showFallbackAlert(message, duration);
@@ -110,12 +120,10 @@ async function loadRequests() {
     const tg = window.Telegram?.WebApp;
     const url = new URL(`${API_BASE_URL}/requests`);
     
-    // Добавляем параметры
     if (tg?.initDataUnsafe?.user?.id) {
       url.searchParams.append('user_id', tg.initDataUnsafe.user.id);
     }
     
-    // Добавляем фильтр статуса
     const statusFilter = document.getElementById('status-filter')?.value;
     if (statusFilter && statusFilter !== 'all') {
       url.searchParams.append('status', statusFilter);
@@ -123,24 +131,16 @@ async function loadRequests() {
     
     console.log('Fetching from:', url.toString());
     
-    // Добавляем таймаут для запроса
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 секунд таймаут
-    
-    const response = await fetch(url, {
+    const response = await fetch(url.toString(), {
       headers: {
         'Telegram-Init-Data': tg?.initData || '',
         'Content-Type': 'application/json'
-      },
-      signal: controller.signal
+      }
     });
     
-    clearTimeout(timeoutId);
-    
     if (!response.ok) {
-      const errorData = await response.json().catch(() => null);
-      const errorMessage = errorData?.error || errorData?.message || `HTTP error ${response.status}`;
-      throw new Error(errorMessage);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `HTTP error ${response.status}`);
     }
     
     const data = await response.json();
@@ -149,26 +149,15 @@ async function loadRequests() {
     
   } catch (error) {
     console.error('Load requests failed:', error);
+    showErrorState(`Ошибка загрузки: ${error.message}`);
+    showFallbackAlert('Не удалось загрузить заявки. Попробуйте позже.', 3000);
     
-    // Более детальное отображение ошибки
-    let errorMessage = 'Не удалось загрузить заявки';
-    if (error.name === 'AbortError') {
-      errorMessage = 'Превышено время ожидания сервера';
-    } else if (error.message.includes('Database operation failed')) {
-      errorMessage = 'Ошибка подключения к базе данных';
-    } else {
-      errorMessage = error.message || errorMessage;
-    }
-    
-    showErrorState(`Ошибка: ${errorMessage}`);
-    showAlert(`${errorMessage}. Попробуйте позже.`);
-    
-    // Логируем дополнительную информацию для диагностики
+    // Для диагностики в режиме разработки
     if (IS_DEVELOPMENT) {
-      console.log('Additional error info:', {
-        errorName: error.name,
-        errorStack: error.stack,
-        timestamp: new Date().toISOString()
+      console.debug('Error details:', {
+        error: error.toString(),
+        stack: error.stack,
+        time: new Date().toISOString()
       });
     }
   }
@@ -293,29 +282,31 @@ function updateLocalRequestState(updatedRequest) {
 // Инициализация приложения
 async function initApp() {
   try {
-    // Инициализация Telegram WebApp
     if (window.Telegram?.WebApp) {
       const tg = window.Telegram.WebApp;
       tg.ready();
       tg.expand();
       tg.enableClosingConfirmation();
-      
-      // Обновляем тему
       document.documentElement.classList.add(tg.colorScheme);
     }
     
-    // Первоначальная загрузка
+    // Проверяем доступность API перед загрузкой данных
+    const isApiHealthy = await checkAPIHealth();
+    if (!isApiHealthy) {
+      throw new Error('API недоступен');
+    }
+    
     await Promise.all([loadRequests(), updateStats()]);
     
-    // Настройка интервала обновления
     setInterval(async () => {
       await loadRequests();
       await updateStats();
-    }, 30000); // Каждые 30 секунд
+    }, 30000);
     
   } catch (error) {
     console.error('App initialization failed:', error);
-    showAlert('Ошибка инициализации приложения');
+    showErrorState(`Ошибка инициализации: ${error.message}`);
+    showFallbackAlert('Ошибка при запуске приложения', 5000);
   }
 }
 
